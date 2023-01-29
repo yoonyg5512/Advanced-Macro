@@ -31,7 +31,7 @@ summ x11104
 keep if inrange(d11101, 30, 65)
 * Marital status: married
 keep if d11104 == 1
-* Drop individuals that are in the 1st and 10th decile of HH labor income distr.
+* Drop individuals that are in the first and last 10% of HH labor income distr.
 keep if inrange(i11103, 11001, 84375)
 * Describe data set and compute some statistics
 describe
@@ -39,10 +39,10 @@ summarize
 ///////////////////////////////////////////////////////////////////////////////
 * Part 3: Remove the life-cycle component of earnings (\kappa_{it})
 * Note: y_{it}=\log(Y_{it})-\kappa_{it}
-* We choose the following observables: eduation level, race and age.
+* We choose age as our observable.
 * Compute log HH post-government income (TAXSIM)
 * See page 218 of Codebook for the Cross-National Equivalent File
-* Drop weird negative values
+* Drop negative values
 drop if i11113<0
 gen log_y = log(i11113)
 * Define panel
