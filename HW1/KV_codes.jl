@@ -25,6 +25,8 @@ using Parameters, Statistics, Random, Distributions, Interpolations, Optim
     N_A::Int64 = 21 # Grid size for asset 
     N_perp::Int64 = 39 # Grid size for permanent income
     N_trans::Int64 = 19 # Grid size for transitory income
+
+    N_pop::Int64 = 1000 # Number of individuals to simulate
 end
 
 mutable struct Results
@@ -36,6 +38,14 @@ mutable struct Results
     Π_trans::Array{Float64, 2} # Transition probability matrix
     zs::Array{Float64, 1} # States of permanent components
     es::Array{Float64, 1} # States of transitory components
+
+    path_sim::Array{Float64, 3} # Simulated data with income paths
+    value_sim::Array{Float64, 2} # Simulated data of values
+    con_sim::Array{Float64, 2} # Simulated data of consumption
+    sav_sim::Array{Float64, 2} # Simulated data of savings
+    inc_sim::Array{Float64, 2} # Simulated data of earnings
+    per_sim::Array{Float64, 2} # Simulated persistent income
+    tra_sim::Array{Float64, 2} # Simulated transitory income
 end
 
 function Initialize()
@@ -50,7 +60,15 @@ function Initialize()
     zs::Array{Float64, 1} = zeros(pars.N_perp)
     es::Array{Float64, 1} = zeros(pars.N_trans)
 
-    res = Results(As, V, A, Π_perp, Π_trans, zs, es)
+    path_sim::Array{Float64, 3} = zeros(pars.N_pop, pars.T, 2)
+    value_sim::Array{Float64, 2} = zeros(pars.N_pop, pars.T)
+    con_sim::Array{Float64, 2} = zeros(pars.N_pop, pars.T)
+    sav_sim::Array{Float64, 2} = zeros(pars.N_pop, pars.T)
+    inc_sim::Array{Float64, 2} = zeros(pars.N_pop, pars.T)
+    per_sim::Array{Float64, 2} = zeros(pars.N_pop, pars.T)
+    tra_sim::Array{Float64, 2} = zeros(pars.N_pop, pars.T)
+
+    res = Results(As, V, A, Π_perp, Π_trans, zs, es, path_sim, value_sim, con_sim, sav_sim, inc_sim, per_sim, tra_sim)
     pars, res
 end
 
@@ -121,7 +139,7 @@ function trans_Tauchen(pars)
     return Π_perp, Π_trans, zs, es
 end
 
-##### 3. Value function iteration
+##### 3. Solving for value and policy functions for each state
 
 function Bellman(pars, res)
     @unpack N_A, T, N_perp, N_trans, κ, r, β = pars
@@ -171,6 +189,7 @@ function Bellman(pars, res)
 
                         a_cand[i_a, t, i_z, i_e] = a_tomorrow
                         v_cand[i_a, t, i_z, i_e] = v_now
+                        println([t,i_z,i_e,i_a])
                     end
                 end
             end
@@ -181,7 +200,7 @@ function Bellman(pars, res)
                     for (i_a, a_today) in enumerate(As)
                         budget_today = (1+r) * a_today + exp(κ[t] + z_today + e_today)
 
-                        function v_tomorrow(i_ap, ip, it, t)
+                        function v_tomorrow(i_ap, ip, it)
                             v_t = 0.0;
                             for (i_zt, z_tom) in enumerate(zs)
                                 for (i_et, e_tom) in enumerate(es)
@@ -190,7 +209,7 @@ function Bellman(pars, res)
                             end
                             return v_t
                         end
-                        v_today(i_ap) = - (budget_today - a_interp(i_ap))^(-1) + β * v_tomorrow(i_ap,i_z,i_e,t)
+                        v_today(i_ap) = - (budget_today - a_interp(i_ap))^(-1) + β * v_tomorrow(i_ap,i_z,i_e)
 
                         obj(i_ap) = - v_today(i_ap)
                         lower = 1.0
@@ -203,6 +222,7 @@ function Bellman(pars, res)
 
                         a_cand[i_a, t, i_z, i_e] = a_tomorrow
                         v_cand[i_a, t, i_z, i_e] = v_now
+                        println([t,i_z,i_e,i_a])
                     end
                 end
             end
@@ -220,6 +240,28 @@ end
 ##### 4. Simulation
 
 function draw_shock(pars, res)
+    @unpack N_pop, T, σ_0 = pars
+    @unpack Π_perp, Π_trans, zs, es = res
+
+    z_0 = rand(Normal(0, σ_0), N_pop) # initial persistent income z_0
+    
+    for i in 1:N_pop
+        z_0[i] = findmax(-abs.(z_0[i] .- zs))[2] # map z_0 onto the discretized set of zs
+    end
+
+    for i in 1:N_pop
+        shocks_gen = reshape(rand(Uniform(0, 1), 2*T), T, 2)
+
+        for j in 1:T 
+            if j == 1
+                res.per_sim[i,j] = zs[Int(floor(get_index(shocks_gen[j,1], cumsum(Π_perp[z_0[i],:]))))]
+            elseif j > 1
+                
+            end
+            
+            res.tra_sim[i,j] = es[Int(floor(get_index(shocks_gen[j,2], cumsum(Π_trans[1,:]))))]
+        end
+    end
 
 end
 
@@ -230,4 +272,4 @@ end
 ##### 5. Run
 
 pars, res = Initialize()
-Solve_Model(pars, res)
+Solve_Model(pars, res) # solve for value and policy functions
