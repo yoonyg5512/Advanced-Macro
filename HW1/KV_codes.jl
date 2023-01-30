@@ -15,14 +15,14 @@ using Parameters, Statistics, Random, Distributions, Interpolations, Optim
     γ::Float64 = 2.0 # CRRA
     r::Float64 = 0.04 # Real interest rate
     T::Int64 = 35 # Age
-    κ::Array{Float64, 1} = ones(T) # Age-dependent income
+    κ::Array{Float64, 1} = zeros(T) # Age-dependent income
     σ_0::Float64 = 0.15 # Volatility of initial permanent income
     σ_η::Float64 = 0.01 # Volatility of permanent income shock
     σ_ϵ::Float64 = 0.05 # Volatility of transitory income shock
     ρ::Float64 = 0.97 # Persistence of permanent income
 
     m::Float64 = 3.0 # Tauchen maximum Value
-    N_A::Int64 = 21 # Grid size for asset 
+    N_A::Int64 = 30 # Grid size for asset 
     N_perp::Int64 = 39 # Grid size for permanent income
     N_trans::Int64 = 19 # Grid size for transitory income
 
@@ -51,7 +51,7 @@ end
 function Initialize()
     pars = Params()
 
-    As::Array{Float64, 1} = range(start = 0.0, stop = 45.0, length = pars.N_A)
+    As::Array{Float64, 1} = range(start = 0.0, stop = 300000.0, length = pars.N_A) # maximum level of asset following KV
 
     V::Array{Float64, 4} = zeros(pars.N_A, pars.T, pars.N_perp, pars.N_trans)
     A::Array{Float64, 4} = zeros(pars.N_A, pars.T, pars.N_perp, pars.N_trans)
@@ -254,15 +254,17 @@ function draw_shock(pars, res)
 
         for j in 1:T 
             if j == 1
-                res.per_sim[i,j] = zs[Int(floor(get_index(shocks_gen[j,1], cumsum(Π_perp[z_0[i],:]))))]
+                res.path_sim[i,j,1] = Int(ceil(get_index(shocks_gen[j,1], cumsum(Π_perp[z_0[i],:]))))
+                res.per_sim[i,j] = zs[res.path_sim[i,j,1]]
             elseif j > 1
-                
+                res.path_sim[i,j,1] = Int(ceil(get_index(shocks_gen[j,1], cumsum(Π_perp[res.path_sim[i,j-1,1],:]))))
+                res.per_sim[i,j] = zs[res.path_sim[i,j,1]]
             end
             
-            res.tra_sim[i,j] = es[Int(floor(get_index(shocks_gen[j,2], cumsum(Π_trans[1,:]))))]
+            res.path_sim[i,j,2] = Int(ceil(get_index(shocks_gen[j,2], cumsum(Π_trans[1,:]))))
+            res.tra_sim[i,j] = es[res.path_sim[i,j,2]]
         end
     end
-
 end
 
 function simulate(pars, res)
