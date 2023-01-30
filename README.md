@@ -4,4 +4,4 @@ Codes for ECON 810 taught by Carter Braxton and Paolo Martellini at UW-Madison, 
 
 Participants: Yeonggyu Yun, Stefano Lord-Medrano, and Fernando de Lima Lopes
 
-1. Kaplan and Violante (2010, AEJ:Macro)
+1. Blundell, Pistaferri, and Preston (2008, AER) and Kaplan and Violante (2010, AEJ:Macro)
