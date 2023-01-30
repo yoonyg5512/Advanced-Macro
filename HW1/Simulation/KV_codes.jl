@@ -4,7 +4,7 @@
 # Prepared by Yeonggyu Yun, Stefano Lord, and Fernando de Lima Lopes #
 ######################################################################
 
-using Parameters, Statistics, Random, Distributions, Interpolations, Optim, Plots
+using Parameters, Statistics, Random, Distributions, Interpolations, Optim, Plots, JLD2
 
 ## We used zero borrowing limit for simplicity.
 
@@ -17,7 +17,6 @@ Random.seed!(1234)
     γ::Float64 = 2.0 # CRRA
     r::Float64 = 0.04 # Real interest rate
     T::Int64 = 35 # Age
-    burnin::Int64 = 200 # burnin periods in simulation
 
     κ::Array{Float64, 1} = [9.6980114, 9.7620722, 9.8271754, 9.8870045, 9.9505494, 10.0128446, 10.0730949, 10.1379952, 10.1938201, 10.2577349, 10.315236, 10.3790348, 10.4361798, 10.4731184, 10.5280191, 10.5683963, 10.6206219, 10.650484, 10.687635, 10.719778, 10.761518, 10.789204, 10.833912, 10.860458, 10.904908, 10.942486, 10.979517, 11.014085, 11.040553, 11.069921, 11.119904, 11.141226, 11.194406, 11.260357, 11.295121] # Age-dependent income
     σ_0::Float64 = sqrt(0.15) # Volatility of initial permanent income
@@ -225,37 +224,46 @@ function draw_shock(pars, res)
     for i in 1:N_pop
         shocks_gen = reshape(rand(Uniform(0, 1), 2*T), T, 2)
 
-        for j in 1:(T + burnin) 
+        for j in 1:T
             if j == 1
-                res.path_sim[i,j,1] = Int(ceil(get_index(shocks_gen[j,1], cumsum(Π_perp[z_0[i],:]))))
-                res.per_sim[i,j] = zs[res.path_sim[i,j,1]]
+                res.path_sim[i,j,1] = Int(ceil(get_index(shocks_gen[j,1], cumsum(Π_perp[Int(z_0[i]),:]))))
+                res.per_sim[i,j] = zs[Int(res.path_sim[i,j,1])]
             elseif j > 1
-                res.path_sim[i,j,1] = Int(ceil(get_index(shocks_gen[j,1], cumsum(Π_perp[res.path_sim[i,j-1,1],:]))))
-                res.per_sim[i,j] = zs[res.path_sim[i,j,1]]
+                res.path_sim[i,j,1] = Int(ceil(get_index(shocks_gen[j,1], cumsum(Π_perp[Int(res.path_sim[i,j-1,1]),:]))))
+                res.per_sim[i,j] = zs[Int(res.path_sim[i,j,1])]
             end
             
             res.path_sim[i,j,2] = Int(ceil(get_index(shocks_gen[j,2], cumsum(Π_trans[1,:]))))
-            res.tra_sim[i,j] = es[res.path_sim[i,j,2]]
+            res.tra_sim[i,j] = es[Int(res.path_sim[i,j,2])]
         end
     end
 end
 
-function simulate(pars, res)
+function Simulate(pars, res)
     draw_shock(pars, res)
 
-    @unpack T, N_pop, N_trans, N_perp = pars
-    @unpack A, V, path_sim = res
+    @unpack T, N_pop, N_trans, N_perp, κ, r = pars
+    @unpack A, V, path_sim, per_sim, tra_sim, As = res
+
+    v_interp = interpolate(V, BSpline(Linear()))
+    a_interp = interpolate(A, BSpline(Linear()))
 
     for i in 1:N_pop
-    
+        for j in 1:T
+            if j == 1
+                res.value_sim[i,j] = V[1,j,Int(path_sim[i,j,1]), Int(path_sim[i,j,2])]
+                res.inc_sim[i,j] = exp(κ[j] + per_sim[i,j] + tra_sim[i,j])
+                res.sav_sim[i,j] = A[1,j,Int(path_sim[i,j,1]), Int(path_sim[i,j,2])]
+                res.con_sim[i,j] = res.inc_sim[i,j] - res.sav_sim[i,j]
+            elseif j > 1
+                k = get_index(res.sav_sim[i,j-1], As)
+                res.value_sim[i,j] = v_interp(k, j, Int(path_sim[i,j,1]), Int(path_sim[i,j,2]))
+                res.inc_sim[i,j] = exp(κ[j] + per_sim[i,j] + tra_sim[i,j])
+                res.sav_sim[i,j] = a_interp(k, j, Int(path_sim[i,j,1]), Int(path_sim[i,j,2]))
+                res.con_sim[i,j] = res.inc_sim[i,j] + (1 + r) * res.sav_sim[i,j-1] - res.sav_sim[i,j]
+            end
+        end
     end
-    value_sim::Array{Float64, 2} # Simulated data of values
-    con_sim::Array{Float64, 2} # Simulated data of consumption
-    sav_sim::Array{Float64, 2} # Simulated data of savings
-    inc_sim::Array{Float64, 2} # Simulated data of earnings
-    
-
-
 end
 
 ##### 5. Run
@@ -263,4 +271,5 @@ end
 pars, res = Initialize()
 Solve_Model(pars, res) # solve for value and policy functions
 
-##### 6. Analysis
+Simulate(pars, res)
+
