@@ -1,9 +1,12 @@
 ######################################################################
 ##### Replication file for Kaplan and Violante (2010, AEJ:Macro) #####
 ######################################################################
+# Prepared by Yeonggyu Yun, Stefano Lord, and Fernando de Lima Lopes #
+######################################################################
+
 using Parameters, Statistics, Random, Distributions, Interpolations, Optim
 
-## I used zero borrowing limit for simplicity.
+## We used zero borrowing limit for simplicity.
 
 ##### 1. Housekeeping
 
@@ -122,7 +125,7 @@ end
 
 function Bellman(pars, res)
     @unpack N_A, T, N_perp, N_trans, κ, r, β = pars
-    @unpack Π_perp, Π_trans, zs, es, As, A, V = res
+    @unpack Π_perp, Π_trans, zs, es, As = res
 
     a_cand = zeros(N_A, T, N_perp, N_trans);
     v_cand = zeros(N_A, T, N_perp, N_trans);
@@ -137,10 +140,7 @@ function Bellman(pars, res)
             end
         end
     end
-    V[:,T,:,:] = v_last;
     v_interp_l = interpolate(v_last, BSpline(Linear()));
-
-    v_interp = interpolate(V, BSpline(Linear()));
 
     for t in collect(T:-1:1)
         if t == T
@@ -171,11 +171,11 @@ function Bellman(pars, res)
 
                         a_cand[i_a, t, i_z, i_e] = a_tomorrow
                         v_cand[i_a, t, i_z, i_e] = v_now
-                        println([t,i_z,i_e,i_a])
                     end
                 end
             end
         elseif t < T
+            v_interp = interpolate(v_cand[:,t+1,:,:], BSpline(Linear()));
             for (i_z, z_today) in enumerate(zs)
                 for (i_e, e_today) in enumerate(es)
                     for (i_a, a_today) in enumerate(As)
@@ -185,7 +185,7 @@ function Bellman(pars, res)
                             v_t = 0.0;
                             for (i_zt, z_tom) in enumerate(zs)
                                 for (i_et, e_tom) in enumerate(es)
-                                    v_t += Π_perp[ip,i_zt] * Π_trans[it,i_et] * v_interp(i_ap,t+1,i_zt,i_et)
+                                    v_t += Π_perp[ip,i_zt] * Π_trans[it,i_et] * v_interp(i_ap,i_zt,i_et)
                                 end
                             end
                             return v_t
@@ -203,29 +203,31 @@ function Bellman(pars, res)
 
                         a_cand[i_a, t, i_z, i_e] = a_tomorrow
                         v_cand[i_a, t, i_z, i_e] = v_now
-                        println([t,i_z,i_e,i_a])
-
                     end
                 end
             end
         end
-
     end
     return v_cand, a_cand
-
 end
 
-function VFI(pars, res, tol::Float64 = 1e-4)
-    res.Π_perp, res.Π_trans, res.zs, res.es = trans_Tauchen(pars)
+function Solve_Model(pars, res, tol::Float64 = 1e-4)
+    res.Π_perp, res.Π_trans, res.zs, res.es = trans_Tauchen(pars) # Discretization
     
-    err = 100.0
-    while err > tol
-        V_cand, A_cand  = Bellman(pars, res)
-        err = maximum(abs.(V_cand .- res.V))
-
-        res.A = A_cand
-        res.V = V_cand
-    end
+    res.V, res.A = Bellman(pars, res) # Backward Induction (no need to iterate)
 end
 
 ##### 4. Simulation
+
+function draw_shock(pars, res)
+
+end
+
+function simulate(pars, res)
+
+end
+
+##### 5. Run
+
+pars, res = Initialize()
+Solve_Model(pars, res)
