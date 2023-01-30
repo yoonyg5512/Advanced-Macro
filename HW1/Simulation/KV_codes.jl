@@ -4,21 +4,25 @@
 # Prepared by Yeonggyu Yun, Stefano Lord, and Fernando de Lima Lopes #
 ######################################################################
 
-using Parameters, Statistics, Random, Distributions, Interpolations, Optim
+using Parameters, Statistics, Random, Distributions, Interpolations, Optim, Plots
 
 ## We used zero borrowing limit for simplicity.
 
 ##### 1. Housekeeping
+
+Random.seed!(1234)
 
 @with_kw struct Params
     β::Float64 = 0.975 # Time-discount factor
     γ::Float64 = 2.0 # CRRA
     r::Float64 = 0.04 # Real interest rate
     T::Int64 = 35 # Age
-    κ::Array{Float64, 1} = zeros(T) # Age-dependent income
-    σ_0::Float64 = 0.15 # Volatility of initial permanent income
-    σ_η::Float64 = 0.01 # Volatility of permanent income shock
-    σ_ϵ::Float64 = 0.05 # Volatility of transitory income shock
+    burnin::Int64 = 200 # burnin periods in simulation
+
+    κ::Array{Float64, 1} = [9.6980114, 9.7620722, 9.8271754, 9.8870045, 9.9505494, 10.0128446, 10.0730949, 10.1379952, 10.1938201, 10.2577349, 10.315236, 10.3790348, 10.4361798, 10.4731184, 10.5280191, 10.5683963, 10.6206219, 10.650484, 10.687635, 10.719778, 10.761518, 10.789204, 10.833912, 10.860458, 10.904908, 10.942486, 10.979517, 11.014085, 11.040553, 11.069921, 11.119904, 11.141226, 11.194406, 11.260357, 11.295121] # Age-dependent income
+    σ_0::Float64 = sqrt(0.15) # Volatility of initial permanent income
+    σ_η::Float64 = sqrt(0.0166) # Volatility of permanent income shock
+    σ_ϵ::Float64 = sqrt(0.0174) # Volatility of transitory income shock
     ρ::Float64 = 0.97 # Persistence of permanent income
 
     m::Float64 = 3.0 # Tauchen maximum Value
@@ -39,13 +43,13 @@ mutable struct Results
     zs::Array{Float64, 1} # States of permanent components
     es::Array{Float64, 1} # States of transitory components
 
-    path_sim::Array{Float64, 3} # Simulated data with income paths
+    path_sim::Array{Float64, 3} # Simulated data with income paths (indices to use)
     value_sim::Array{Float64, 2} # Simulated data of values
     con_sim::Array{Float64, 2} # Simulated data of consumption
     sav_sim::Array{Float64, 2} # Simulated data of savings
     inc_sim::Array{Float64, 2} # Simulated data of earnings
-    per_sim::Array{Float64, 2} # Simulated persistent income
-    tra_sim::Array{Float64, 2} # Simulated transitory income
+    per_sim::Array{Float64, 2} # Simulated persistent income (z's)
+    tra_sim::Array{Float64, 2} # Simulated transitory income (ϵ's)
 end
 
 function Initialize()
@@ -93,6 +97,8 @@ end
 
 ##### 2. Discretization (Tauchen)
 
+## It seems like Kaplan and Violante (2010) truncated the distribution to values between 5th and 95th quantile, but not here.
+
 function trans_Tauchen(pars)
     @unpack σ_η, σ_ϵ, ρ, m, N_perp, N_trans = pars
 
@@ -108,11 +114,11 @@ function trans_Tauchen(pars)
     for (j, z_j) in enumerate(zs)
         for (k, z_k) in enumerate(zs)
             if k == 1
-                Π_perp[j,k] = cdf(Normal(), (z_k+d1/2-ρ*z_j)/σ_η)
+                Π_perp[j,k] = cdf(Normal(0, 1), (z_k+d1/2-ρ*z_j)/σ_η)
             elseif k == N_perp
                 Π_perp[j,k] = 1 - cdf(Normal(), (z_k-d1/2-ρ*z_j)/σ_η)
             end
-            Π_perp[j,k] = cdf(Normal(), (z_k+d1/2-ρ*z_j)/σ_η) - cdf(Normal(), (z_k-d1/2-ρ*z_j)/σ_η)
+            Π_perp[j,k] = cdf(Normal(0, 1), (z_k+d1/2-ρ*z_j)/σ_η) - cdf(Normal(0, 1), (z_k-d1/2-ρ*z_j)/σ_η)
         end
     end
 
@@ -128,11 +134,11 @@ function trans_Tauchen(pars)
     for (j, e_j) in enumerate(es)
         for (k, e_k) in enumerate(es)
             if k == 1
-                Π_trans[j,k] = cdf(Normal(), (e_k+d2/2)/σ_ϵ)
+                Π_trans[j,k] = cdf(Normal(0, 1), (e_k+d2/2)/σ_ϵ)
             elseif k == N_trans
                 Π_trans[j,k] = 1 - cdf(Normal(), (e_k-d2/2)/σ_ϵ)
             end
-            Π_trans[j,k] = cdf(Normal(), (e_k+d2/2)/σ_ϵ) - cdf(Normal(), (e_k-d2/2)/σ_ϵ)
+            Π_trans[j,k] = cdf(Normal(0, 1), (e_k+d2/2)/σ_ϵ) - cdf(Normal(0, 1), (e_k-d2/2)/σ_ϵ)
         end
     end
 
@@ -142,7 +148,7 @@ end
 ##### 3. Solving for value and policy functions for each state
 
 function Bellman(pars, res)
-    @unpack N_A, T, N_perp, N_trans, κ, r, β = pars
+    @unpack N_A, T, N_perp, N_trans, κ, r, β, γ = pars
     @unpack Π_perp, Π_trans, zs, es, As = res
 
     a_cand = zeros(N_A, T, N_perp, N_trans);
@@ -150,18 +156,19 @@ function Bellman(pars, res)
 
     a_interp = interpolate(As, BSpline(Linear()))
 
-    v_last = zeros(N_A, N_perp, N_trans);
+    v_last = zeros(N_A, N_perp, N_trans); # Value at last period (Save nothing and eat up in the last period)
     for i in 1:N_perp
         for j in 1:N_trans
             for k in 1:N_A
-                v_last[k,i,j] = - ((1+r)*As[k] + exp(κ[T] + zs[i] + es[j]))^(-1) 
+                v_last[k,i,j] = ((1+r)*As[k] + exp(κ[T] + zs[i] + es[j]))^(1-γ) / (1-γ) 
             end
         end
     end
-    v_interp_l = interpolate(v_last, BSpline(Linear()));
-
-    for t in collect(T:-1:1)
-        if t == T
+    v_cand[:,T,:,:] = v_last;
+    a_cand[:,T,:,:] .= 0.0; 
+    
+    for t in collect((T-1):-1:1)
+        v_interp = interpolate(v_cand[:,t+1,:,:], BSpline(Linear()));
             for (i_z, z_today) in enumerate(zs)
                 for (i_e, e_today) in enumerate(es)
                     for (i_a, a_today) in enumerate(As)
@@ -171,45 +178,12 @@ function Bellman(pars, res)
                             v_t = 0.0;
                             for (i_zt, z_tom) in enumerate(zs)
                                 for (i_et, e_tom) in enumerate(es)
-                                    v_t += Π_perp[ip,i_zt] * Π_trans[it,i_et] * v_interp_l(i_ap,i_zt,i_et)
-                                end
-                            end
-                            return v_t
-                        end
-                        v_today(i_ap) = - (budget_today - a_interp(i_ap))^(-1) + β * v_tomorrow(i_ap,i_z,i_e)
-
-                        obj(i_ap) = - v_today(i_ap)
-                        lower = 1.0
-                        upper = get_index(budget_today, As)
-
-                        opt = optimize(obj, lower, upper)
-
-                        a_tomorrow = a_interp(opt.minimizer[1])
-                        v_now = -opt.minimum
-
-                        a_cand[i_a, t, i_z, i_e] = a_tomorrow
-                        v_cand[i_a, t, i_z, i_e] = v_now
-                        println([t,i_z,i_e,i_a])
-                    end
-                end
-            end
-        elseif t < T
-            v_interp = interpolate(v_cand[:,t+1,:,:], BSpline(Linear()));
-            for (i_z, z_today) in enumerate(zs)
-                for (i_e, e_today) in enumerate(es)
-                    for (i_a, a_today) in enumerate(As)
-                        budget_today = (1+r) * a_today + exp(κ[t] + z_today + e_today)
-
-                        function v_tomorrow(i_ap, ip, it)
-                            v_t = 0.0;
-                            for (i_zt, z_tom) in enumerate(zs)
-                                for (i_et, e_tom) in enumerate(es)
                                     v_t += Π_perp[ip,i_zt] * Π_trans[it,i_et] * v_interp(i_ap,i_zt,i_et)
                                 end
                             end
                             return v_t
                         end
-                        v_today(i_ap) = - (budget_today - a_interp(i_ap))^(-1) + β * v_tomorrow(i_ap,i_z,i_e)
+                        v_today(i_ap) = (budget_today - a_interp(i_ap))^(1-γ) / (1-γ) + β * v_tomorrow(i_ap,i_z,i_e)
 
                         obj(i_ap) = - v_today(i_ap)
                         lower = 1.0
@@ -222,11 +196,10 @@ function Bellman(pars, res)
 
                         a_cand[i_a, t, i_z, i_e] = a_tomorrow
                         v_cand[i_a, t, i_z, i_e] = v_now
-                        println([t,i_z,i_e,i_a])
                     end
                 end
             end
-        end
+        println(t)
     end
     return v_cand, a_cand
 end
@@ -234,7 +207,7 @@ end
 function Solve_Model(pars, res, tol::Float64 = 1e-4)
     res.Π_perp, res.Π_trans, res.zs, res.es = trans_Tauchen(pars) # Discretization
     
-    res.V, res.A = Bellman(pars, res) # Backward Induction (no need to iterate)
+    res.V, res.A = Bellman(pars, res); # Backward Induction (no need to iterate)
 end
 
 ##### 4. Simulation
@@ -252,7 +225,7 @@ function draw_shock(pars, res)
     for i in 1:N_pop
         shocks_gen = reshape(rand(Uniform(0, 1), 2*T), T, 2)
 
-        for j in 1:T 
+        for j in 1:(T + burnin) 
             if j == 1
                 res.path_sim[i,j,1] = Int(ceil(get_index(shocks_gen[j,1], cumsum(Π_perp[z_0[i],:]))))
                 res.per_sim[i,j] = zs[res.path_sim[i,j,1]]
@@ -268,6 +241,20 @@ function draw_shock(pars, res)
 end
 
 function simulate(pars, res)
+    draw_shock(pars, res)
+
+    @unpack T, N_pop, N_trans, N_perp = pars
+    @unpack A, V, path_sim = res
+
+    for i in 1:N_pop
+    
+    end
+    value_sim::Array{Float64, 2} # Simulated data of values
+    con_sim::Array{Float64, 2} # Simulated data of consumption
+    sav_sim::Array{Float64, 2} # Simulated data of savings
+    inc_sim::Array{Float64, 2} # Simulated data of earnings
+    
+
 
 end
 
@@ -275,3 +262,5 @@ end
 
 pars, res = Initialize()
 Solve_Model(pars, res) # solve for value and policy functions
+
+##### 6. Analysis
