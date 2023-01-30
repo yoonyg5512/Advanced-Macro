@@ -1,8 +1,9 @@
 ######################################################################
 ##### Replication file for Kaplan and Violante (2010, AEJ:Macro) #####
 ######################################################################
-using Parameters, Statistics, Random, Distributions
+using Parameters, Statistics, Random, Distributions, Interpolations, Optim
 
+## I used zero borrowing limit for simplicity.
 
 ##### 1. Housekeeping
 
@@ -10,8 +11,8 @@ using Parameters, Statistics, Random, Distributions
     β::Float64 = 0.975 # Time-discount factor
     γ::Float64 = 2.0 # CRRA
     r::Float64 = 0.04 # Real interest rate
-    κ::Array{Float64, 1} = 
     T::Int64 = 35 # Age
+    κ::Array{Float64, 1} = ones(T) # Age-dependent income
     σ_0::Float64 = 0.15 # Volatility of initial permanent income
     σ_η::Float64 = 0.01 # Volatility of permanent income shock
     σ_ϵ::Float64 = 0.05 # Volatility of transitory income shock
@@ -24,7 +25,6 @@ using Parameters, Statistics, Random, Distributions
 end
 
 mutable struct Results
-    bc::Int64 # 1: Zero borrowing  / 2: Natural borrowing limit
     As::Array{Float64, 1} # Asset grid depending on the borrowing limit
 
     V::Array{Float64, 4} # Value function
@@ -35,10 +35,10 @@ mutable struct Results
     es::Array{Float64, 1} # States of transitory components
 end
 
-function Initialize(bc = 1)
+function Initialize()
     pars = Params()
 
-    As::Array{Float64, 1} = zeros(pars.N_A)
+    As::Array{Float64, 1} = range(start = 0.0, stop = 45.0, length = pars.N_A)
 
     V::Array{Float64, 4} = zeros(pars.N_A, pars.T, pars.N_perp, pars.N_trans)
     A::Array{Float64, 4} = zeros(pars.N_A, pars.T, pars.N_perp, pars.N_trans)
@@ -47,7 +47,7 @@ function Initialize(bc = 1)
     zs::Array{Float64, 1} = zeros(pars.N_perp)
     es::Array{Float64, 1} = zeros(pars.N_trans)
 
-    res = Results(bc, As, V, A, Π_perp, Π_trans, zs, es)
+    res = Results(As, V, A, Π_perp, Π_trans, zs, es)
     pars, res
 end
 
@@ -88,7 +88,7 @@ function trans_Tauchen(pars)
         for (k, z_k) in enumerate(zs)
             if k == 1
                 Π_perp[j,k] = cdf(Normal(), (z_k+d1/2-ρ*z_j)/σ_η)
-            elseif k == N
+            elseif k == N_perp
                 Π_perp[j,k] = 1 - cdf(Normal(), (z_k-d1/2-ρ*z_j)/σ_η)
             end
             Π_perp[j,k] = cdf(Normal(), (z_k+d1/2-ρ*z_j)/σ_η) - cdf(Normal(), (z_k-d1/2-ρ*z_j)/σ_η)
@@ -108,10 +108,10 @@ function trans_Tauchen(pars)
         for (k, e_k) in enumerate(es)
             if k == 1
                 Π_trans[j,k] = cdf(Normal(), (e_k+d2/2)/σ_ϵ)
-            elseif k == N
+            elseif k == N_trans
                 Π_trans[j,k] = 1 - cdf(Normal(), (e_k-d2/2)/σ_ϵ)
             end
-            Π_trans[j,k] = cdf(Normal(), (e_k+d/2)/σ_ϵ) - cdf(Normal(), (e_k-d/2)/σ_ϵ)
+            Π_trans[j,k] = cdf(Normal(), (e_k+d2/2)/σ_ϵ) - cdf(Normal(), (e_k-d2/2)/σ_ϵ)
         end
     end
 
@@ -120,6 +120,112 @@ end
 
 ##### 3. Value function iteration
 
+function Bellman(pars, res)
+    @unpack N_A, T, N_perp, N_trans, κ, r, β = pars
+    @unpack Π_perp, Π_trans, zs, es, As, A, V = res
 
+    a_cand = zeros(N_A, T, N_perp, N_trans);
+    v_cand = zeros(N_A, T, N_perp, N_trans);
+
+    a_interp = interpolate(As, BSpline(Linear()))
+
+    v_last = zeros(N_A, N_perp, N_trans);
+    for i in 1:N_perp
+        for j in 1:N_trans
+            for k in 1:N_A
+                v_last[k,i,j] = - ((1+r)*As[k] + exp(κ[T] + zs[i] + es[j]))^(-1) 
+            end
+        end
+    end
+    V[:,T,:,:] = v_last;
+    v_interp_l = interpolate(v_last, BSpline(Linear()));
+
+    v_interp = interpolate(V, BSpline(Linear()));
+
+    for t in collect(T:-1:1)
+        if t == T
+            for (i_z, z_today) in enumerate(zs)
+                for (i_e, e_today) in enumerate(es)
+                    for (i_a, a_today) in enumerate(As)
+                        budget_today = (1+r) * a_today + exp(κ[t] + z_today + e_today)
+                        
+                        function v_tomorrow(i_ap, ip, it)
+                            v_t = 0.0;
+                            for (i_zt, z_tom) in enumerate(zs)
+                                for (i_et, e_tom) in enumerate(es)
+                                    v_t += Π_perp[ip,i_zt] * Π_trans[it,i_et] * v_interp_l(i_ap,i_zt,i_et)
+                                end
+                            end
+                            return v_t
+                        end
+                        v_today(i_ap) = - (budget_today - a_interp(i_ap))^(-1) + β * v_tomorrow(i_ap,i_z,i_e)
+
+                        obj(i_ap) = - v_today(i_ap)
+                        lower = 1.0
+                        upper = get_index(budget_today, As)
+
+                        opt = optimize(obj, lower, upper)
+
+                        a_tomorrow = a_interp(opt.minimizer[1])
+                        v_now = -opt.minimum
+
+                        a_cand[i_a, t, i_z, i_e] = a_tomorrow
+                        v_cand[i_a, t, i_z, i_e] = v_now
+                        println([t,i_z,i_e,i_a])
+                    end
+                end
+            end
+        elseif t < T
+            for (i_z, z_today) in enumerate(zs)
+                for (i_e, e_today) in enumerate(es)
+                    for (i_a, a_today) in enumerate(As)
+                        budget_today = (1+r) * a_today + exp(κ[t] + z_today + e_today)
+
+                        function v_tomorrow(i_ap, ip, it, t)
+                            v_t = 0.0;
+                            for (i_zt, z_tom) in enumerate(zs)
+                                for (i_et, e_tom) in enumerate(es)
+                                    v_t += Π_perp[ip,i_zt] * Π_trans[it,i_et] * v_interp(i_ap,t+1,i_zt,i_et)
+                                end
+                            end
+                            return v_t
+                        end
+                        v_today(i_ap) = - (budget_today - a_interp(i_ap))^(-1) + β * v_tomorrow(i_ap,i_z,i_e,t)
+
+                        obj(i_ap) = - v_today(i_ap)
+                        lower = 1.0
+                        upper = get_index(budget_today, As)
+
+                        opt = optimize(obj, lower, upper)
+
+                        a_tomorrow = a_interp(opt.minimizer[1])
+                        v_now = -opt.minimum
+
+                        a_cand[i_a, t, i_z, i_e] = a_tomorrow
+                        v_cand[i_a, t, i_z, i_e] = v_now
+                        println([t,i_z,i_e,i_a])
+
+                    end
+                end
+            end
+        end
+
+    end
+    return v_cand, a_cand
+
+end
+
+function VFI(pars, res, tol::Float64 = 1e-4)
+    res.Π_perp, res.Π_trans, res.zs, res.es = trans_Tauchen(pars)
+    
+    err = 100.0
+    while err > tol
+        V_cand, A_cand  = Bellman(pars, res)
+        err = maximum(abs.(V_cand .- res.V))
+
+        res.A = A_cand
+        res.V = V_cand
+    end
+end
 
 ##### 4. Simulation
