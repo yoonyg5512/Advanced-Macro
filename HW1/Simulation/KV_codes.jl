@@ -4,7 +4,7 @@
 # Prepared by Yeonggyu Yun, Stefano Lord, and Fernando de Lima Lopes #
 ######################################################################
 
-using Parameters, Statistics, Random, Distributions, Interpolations, Optim, Plots, JLD2
+using Parameters, Statistics, Random, Distributions, Interpolations, Optim, Plots, CSV, Tables
 
 ## We used zero borrowing limit for simplicity.
 
@@ -273,3 +273,9 @@ Solve_Model(pars, res) # solve for value and policy functions
 
 Simulate(pars, res)
 
+CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 1/HW/Values.csv", Tables.table(res.value_sim), writeheader = false)
+CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 1/HW/Income.csv", Tables.table(res.inc_sim), writeheader = false)
+CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 1/HW/Savings.csv", Tables.table(res.sav_sim), writeheader = false)
+CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 1/HW/Consumption.csv", Tables.table(res.con_sim), writeheader = false)
+CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 1/HW/Persistent.csv", Tables.table(res.per_sim), writeheader = false)
+CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 1/HW/Transitory.csv", Tables.table(res.tra_sim), writeheader = false)
