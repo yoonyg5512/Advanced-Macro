@@ -92,7 +92,7 @@ function trans_Tauchen(pars)
             elseif j == N_w
                 Π_w[j] = 1 - cdf(Normal(0, 1), (w_j-d/2)/σ_w)
             else
-            Π_w[j] = cdf(Normal(0, 1), (w_j+d/2)/σ_w) - cdf(Normal(0, 1), (w_j-d/2)/σ_w)
+                Π_w[j] = cdf(Normal(0, 1), (w_j+d/2)/σ_w) - cdf(Normal(0, 1), (w_j-d/2)/σ_w)
             end
     end
 
@@ -115,6 +115,8 @@ function Bellman(pars, res)
             S_cand[:,t] .= s_grid[1]
             W_cand[:,t,:] .= reshape(h_grid, N_h, 1) * reshape(w_grid, 1, N_w)
         else
+            # If h is at its lower bound, there's no decrease in human capital.
+
             E_W_stay = sum(Π_w .* maximum.(eachcol([W[1,t+1,:]; U[1,t+1]])))
             Us = b .- 0.5 .* s_grid .+ β .* (sqrt.(s_grid) .* E_W_stay .+ (1 .-sqrt.(s_grid)) .* U[1,t+1])
 
@@ -122,6 +124,8 @@ function Bellman(pars, res)
             S_cand[1,t] = s_grid[findmax(Us)[2]]
             W_cand[1,t,:] = w_grid .* h_grid[1] .+ β .* ψ_e .* ((1-δ) .* W[2,t+1,:] .+ δ .* U[2,t+1]) .+  β .* (1-ψ_e) .* ((1-δ) .* W[1,t+1,:] .+ δ .* U[1,t+1])
             
+            # If h is at its upper bound, there's no increase in human capital.
+
             E_W_down = sum(Π_w .* maximum.(eachcol([W[N_h-1,t+1,:]; U[N_h-1,t+1]])))
             E_W_stay = sum(Π_w .* maximum.(eachcol([W[N_h,t+1,:]; U[N_h,t+1]])))
             Us = b .- 0.5 .* s_grid .+ β .* ψ_u .* (sqrt.(s_grid) .* E_W_down .+ (1 .-sqrt.(s_grid)) .* U[N_h-1,t+1]) .+ β .* (1-ψ_u) .* (sqrt.(s_grid) .* E_W_stay .+ (1 .-sqrt.(s_grid)) .* U[N_h,t+1])
