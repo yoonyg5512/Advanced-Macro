@@ -10,7 +10,7 @@ using Parameters, Statistics, Random, Distributions, Interpolations, Optim, Plot
 
 ##### 1. Housekeeping
 
-@with_kw struct Params()
+@with_kw struct Params
     T::Int64 = 360 
     r::Float64 = 0.04 # Interest rate
     β::Float64 = (1/(1+r))^(1/12) # Time discount
@@ -30,7 +30,7 @@ using Parameters, Statistics, Random, Distributions, Interpolations, Optim, Plot
     N_w::Int64 = 41 # Grid size for wage offers
 end
 
-mutable struct Results()
+mutable struct Results
     U::Array{Float64, 2}
     S::Array{Float64, 2}
     W::Array{Float64, 3}
@@ -83,9 +83,9 @@ function trans_Tauchen(pars)
     ws = range(start = w1, stop = wN, length = N_w)
     d = ws[2] - ws[1]
     for (j, w_j) in enumerate(ws)
-            if k == 1
+            if j == 1
                 Π_w[j] = cdf(Normal(0, 1), (w_j+d/2)/σ_w)
-            elseif k == N_perp
+            elseif j == N_w
                 Π_w[j] = 1 - cdf(Normal(0, 1), (w_j-d/2)/σ_w)
             else
             Π_w[j] = cdf(Normal(0, 1), (w_j+d/2)/σ_w) - cdf(Normal(0, 1), (w_j-d/2)/σ_w)
@@ -98,7 +98,7 @@ end
 ##### 2. Value function iteration
 
 function Bellman(pars, res)
-    @unpack b, β, s_grid, h_grid, T, N_w, N_h, N_s, ψ_e, ψ_u = pars
+    @unpack b, β, s_grid, h_grid, T, N_w, N_h, N_s, ψ_e, ψ_u, δ = pars
     @unpack Π_w, w_grid, U, W = res
 
     U_cand = zeros(N_h, T)
@@ -112,7 +112,7 @@ function Bellman(pars, res)
             W_cand[:,t,:] .= reshape(h_grid, N_h, 1) * reshape(w_grid, 1, N_w)
         else
             E_W_stay = sum(Π_w .* maximum.(eachcol([W[1,t+1,:]; U[1,t+1]])))
-            Us = b .- 0.5 * s_grid .+ β .* (sqrt.(s_grid) .* E_W_stay .+ (1-sqrt.(s_grid)) .* U[i,t+1])
+            Us = b .- 0.5 .* s_grid .+ β .* (sqrt.(s_grid) .* E_W_stay .+ (1 .-sqrt.(s_grid)) .* U[1,t+1])
 
             U_cand[1,t] = findmax(Us)[1]
             S_cand[1,t] = s_grid[findmax(Us)[2]]
@@ -120,17 +120,17 @@ function Bellman(pars, res)
             
             E_W_down = sum(Π_w .* maximum.(eachcol([W[N_h-1,t+1,:]; U[N_h-1,t+1]])))
             E_W_stay = sum(Π_w .* maximum.(eachcol([W[N_h,t+1,:]; U[N_h,t+1]])))
-            Us = b .- 0.5 * s_grid .+ β .* ψ_u .* (sqrt.(s_grid) .* E_W_down .+ (1-sqrt.(s_grid)) .* U[N_h-1,t+1]) .+ β .* (1-ψ_u) .* (sqrt.(s_grid) .* E_W_stay .+ (1-sqrt.(s_grid)) .* U[N_h,t+1])
+            Us = b .- 0.5 .* s_grid .+ β .* ψ_u .* (sqrt.(s_grid) .* E_W_down .+ (1 .-sqrt.(s_grid)) .* U[N_h-1,t+1]) .+ β .* (1-ψ_u) .* (sqrt.(s_grid) .* E_W_stay .+ (1 .-sqrt.(s_grid)) .* U[N_h,t+1])
             
             U_cand[N_h,t] = findmax(Us)[1]
             S_cand[N_h,t] = s_grid[findmax(Us)[2]]
             W_cand[N_h,t,:] = w_grid .* h_grid[N_h] .+ β .* ((1-δ) .* W[N_h,t+1,:] .+ δ .* U[N_h,t+1])
             
-            for i in 2:N_h
+            for i in 2:(N_h-1)
                 E_W_down = sum(Π_w .* maximum.(eachcol([W[i-1,t+1,:]; U[i-1,t+1]])))
                 E_W_stay = sum(Π_w .* maximum.(eachcol([W[i,t+1,:]; U[i,t+1]])))
 
-                Us = b .- 0.5 * s_grid .+ β .* ψ_u .* (sqrt.(s_grid) .* E_W_down .+ (1-sqrt.(s_grid)) .* U[i-1,t+1]) .+ β .* (1-ψ_u) .* (sqrt.(s_grid) .* E_W_stay .+ (1-sqrt.(s_grid)) .* U[i,t+1])
+                Us = b .- 0.5 .* s_grid .+ β .* ψ_u .* (sqrt.(s_grid) .* E_W_down .+ (1 .-sqrt.(s_grid)) .* U[i-1,t+1]) .+ β .* (1-ψ_u) .* (sqrt.(s_grid) .* E_W_stay .+ (1 .-sqrt.(s_grid)) .* U[i,t+1])
                 U_cand[i,t] = findmax(Us)[1]
                 S_cand[i,t] = s_grid[findmax(Us)[2]]
                 
@@ -156,3 +156,8 @@ function VFI(pars, res, tol = 1e-4)
         res.W = W_next
     end
 end
+
+##### 3. Run
+
+pars, res = Initialize()
+VFI(pars, res)
