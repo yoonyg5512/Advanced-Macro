@@ -35,7 +35,7 @@ mutable struct Results()
     S::Array{Float64, 2}
     W::Array{Float64, 3}
 
-    ws::Array{Float64, 1}
+    w_grid::Array{Float64, 1}
     Π_w::Array{Float64, 1}
 end
 
@@ -46,8 +46,11 @@ function Initialize()
     S = zeros(pars.N_h, pars.T)
     W = zeros(pars.N_h, pars.T, pars.N_w)
     
-    ws = zeros(pars.N_w)
+    w_grid = zeros(pars.N_w)
     Π_w = zeros(pars.N_w)
+
+    res = Results(U, S, W, w_grid, Π_w)
+    return pars, res
 end
 
 ## 1-1. Miscellaneous functions
@@ -95,12 +98,61 @@ end
 ##### 2. Value function iteration
 
 function Bellman(pars, res)
-    @unpack b, β, s_grid, h_grid, T, N_w, N_h, N_s = pars
-
-    res.Π_w, res.ws = trans_Tauchen(pars)
+    @unpack b, β, s_grid, h_grid, T, N_w, N_h, N_s, ψ_e, ψ_u = pars
+    @unpack Π_w, w_grid, U, W = res
 
     U_cand = zeros(N_h, T)
     W_cand = zeros(N_h, T, N_w)
+    S_cand = zeros(N_h, T)
 
+    for t in collect(T:-1:1)
+        if t == T
+            U_cand[:,t] .= b
+            S_cand[:,t] .= s_grid[1]
+            W_cand[:,t,:] .= reshape(h_grid, N_h, 1) * reshape(w_grid, 1, N_w)
+        else
+            E_W_stay = sum(Π_w .* maximum.(eachcol([W[1,t+1,:]; U[1,t+1]])))
+            Us = b .- 0.5 * s_grid .+ β .* (sqrt.(s_grid) .* E_W_stay .+ (1-sqrt.(s_grid)) .* U[i,t+1])
+
+            U_cand[1,t] = findmax(Us)[1]
+            S_cand[1,t] = s_grid[findmax(Us)[2]]
+            W_cand[1,t,:] = w_grid .* h_grid[1] .+ β .* ψ_e .* ((1-δ) .* W[2,t+1,:] .+ δ .* U[2,t+1]) .+  β .* (1-ψ_e) .* ((1-δ) .* W[1,t+1,:] .+ δ .* U[1,t+1])
+            
+            E_W_down = sum(Π_w .* maximum.(eachcol([W[N_h-1,t+1,:]; U[N_h-1,t+1]])))
+            E_W_stay = sum(Π_w .* maximum.(eachcol([W[N_h,t+1,:]; U[N_h,t+1]])))
+            Us = b .- 0.5 * s_grid .+ β .* ψ_u .* (sqrt.(s_grid) .* E_W_down .+ (1-sqrt.(s_grid)) .* U[N_h-1,t+1]) .+ β .* (1-ψ_u) .* (sqrt.(s_grid) .* E_W_stay .+ (1-sqrt.(s_grid)) .* U[N_h,t+1])
+            
+            U_cand[N_h,t] = findmax(Us)[1]
+            S_cand[N_h,t] = s_grid[findmax(Us)[2]]
+            W_cand[N_h,t,:] = w_grid .* h_grid[N_h] .+ β .* ((1-δ) .* W[N_h,t+1,:] .+ δ .* U[N_h,t+1])
+            
+            for i in 2:N_h
+                E_W_down = sum(Π_w .* maximum.(eachcol([W[i-1,t+1,:]; U[i-1,t+1]])))
+                E_W_stay = sum(Π_w .* maximum.(eachcol([W[i,t+1,:]; U[i,t+1]])))
+
+                Us = b .- 0.5 * s_grid .+ β .* ψ_u .* (sqrt.(s_grid) .* E_W_down .+ (1-sqrt.(s_grid)) .* U[i-1,t+1]) .+ β .* (1-ψ_u) .* (sqrt.(s_grid) .* E_W_stay .+ (1-sqrt.(s_grid)) .* U[i,t+1])
+                U_cand[i,t] = findmax(Us)[1]
+                S_cand[i,t] = s_grid[findmax(Us)[2]]
+                
+                W_cand[i,t,:] = w_grid .* h_grid[i] .+ β .* ψ_e .* ((1-δ) .* W[i+1,t+1,:] .+ δ .* U[i+1,t+1]) .+  β .* (1-ψ_e) .* ((1-δ) .* W[i,t+1,:] .+ δ .* U[i,t+1])
+            end
+        end
+    end
     
+    res.S = S_next
+    return U_cand, W_cand
+end
+
+function VFI(pars, res, tol = 1e-4)
+    res.Π_w, res.w_grid = trans_Tauchen(pars)
+
+    err = 100
+    while err > tol
+        U_next, W_next = Bellman(pars, res)
+
+        err = max(abs.(res.U .- U_next), abs.(res.W .- W_next))
+
+        res.U = U_next
+        res.W = W_next
+    end
 end
