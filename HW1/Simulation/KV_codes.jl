@@ -116,8 +116,9 @@ function trans_Tauchen(pars)
                 Π_perp[j,k] = cdf(Normal(0, 1), (z_k+d1/2-ρ*z_j)/σ_η)
             elseif k == N_perp
                 Π_perp[j,k] = 1 - cdf(Normal(), (z_k-d1/2-ρ*z_j)/σ_η)
+            else
+                Π_perp[j,k] = cdf(Normal(0, 1), (z_k+d1/2-ρ*z_j)/σ_η) - cdf(Normal(0, 1), (z_k-d1/2-ρ*z_j)/σ_η)
             end
-            Π_perp[j,k] = cdf(Normal(0, 1), (z_k+d1/2-ρ*z_j)/σ_η) - cdf(Normal(0, 1), (z_k-d1/2-ρ*z_j)/σ_η)
         end
     end
 
@@ -136,8 +137,9 @@ function trans_Tauchen(pars)
                 Π_trans[j,k] = cdf(Normal(0, 1), (e_k+d2/2)/σ_ϵ)
             elseif k == N_trans
                 Π_trans[j,k] = 1 - cdf(Normal(), (e_k-d2/2)/σ_ϵ)
+            else
+                Π_trans[j,k] = cdf(Normal(0, 1), (e_k+d2/2)/σ_ϵ) - cdf(Normal(0, 1), (e_k-d2/2)/σ_ϵ)
             end
-            Π_trans[j,k] = cdf(Normal(0, 1), (e_k+d2/2)/σ_ϵ) - cdf(Normal(0, 1), (e_k-d2/2)/σ_ϵ)
         end
     end
 
