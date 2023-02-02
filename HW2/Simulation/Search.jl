@@ -11,7 +11,7 @@ using Parameters, Statistics, Random, Distributions, Interpolations, Optim, Plot
 ##### 1. Housekeeping
 
 @with_kw struct Params
-    T::Int64 = 360 
+    T::Int64 = 360 # Corresponds to 30 years
     r::Float64 = 0.04 # Interest rate
     β::Float64 = (1/(1+r))^(1/12) # Time discount
     δ::Float64 = 0.033 # Layoff probability
@@ -19,10 +19,14 @@ using Parameters, Statistics, Random, Distributions, Interpolations, Optim, Plot
     ψ_u::Float64 = 0.4 # Decrease probability of human capital
     ψ_e::Float64 = 0.6 # Increase probability of human capital
 
+    # Grids for human capital h and search effort s
+
     N_h::Int64 = 25
     N_s::Int64 = 41
     h_grid::Array{Float64, 1} = range(start = 1.0, stop = 2.0, length = N_h)
     s_grid::Array{Float64, 1} = range(start = 0.0, stop = 1.0, length = N_s)
+
+    # Discretized grid for w
 
     σ_w::Float64 = sqrt(0.1) # Volatility of wage offer
     μ_w::Float64 = 0.5 # Mean of wage offer
