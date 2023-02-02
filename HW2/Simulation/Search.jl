@@ -139,7 +139,7 @@ function Bellman(pars, res)
         end
     end
     
-    res.S = S_next
+    res.S = S_cand
     return U_cand, W_cand
 end
 
@@ -150,7 +150,7 @@ function VFI(pars, res, tol = 1e-4)
     while err > tol
         U_next, W_next = Bellman(pars, res)
 
-        err = max(abs.(res.U .- U_next), abs.(res.W .- W_next))
+        err = maximum([maximum(abs.(res.U .- U_next)), maximum(abs.(res.W .- W_next))])
 
         res.U = U_next
         res.W = W_next
