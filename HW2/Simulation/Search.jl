@@ -270,6 +270,13 @@ function simulate(pars, res)
             end
         end
     end
+    
+    for i in 1:N_i
+        for j in 1:T
+            H_path[i,j] = h_grid[Int(H_path[i,j])]
+        end
+    end
+
     return U_path, H_path, W_path
 end
 
@@ -278,3 +285,9 @@ end
 simulated = Init_sim(pars)
 simulated.U_path, simulated.H_path, simulated.W_path = simulate(pars, res)
 
+
+##### 7. Write in csv
+
+CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 2/HW/U_path.csv", Tables.table(simulated.U_path), writeheader = false)
+CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 2/HW/H_path.csv", Tables.table(simulated.H_path), writeheader = false)
+CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 2/HW/W_path.csv", Tables.table(simulated.W_path), writeheader = false)
