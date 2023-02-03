@@ -30,7 +30,7 @@ Random.seed!(1234)
 
     σ_w::Float64 = sqrt(0.1) # Volatility of wage offer
     μ_w::Float64 = 0.5 # Mean of wage offer
-    m::Float64 = 3.0 # Tauchen maximum value
+    m::Float64 = 3 # Tauchen maximum value
     N_w::Int64 = 41 # Grid size for wage offers
 
     # Simulation
@@ -53,8 +53,8 @@ end
 function Initialize()
     pars = Params()
 
-    ψ_u::Float64 = 0.4 # Decrease probability of human capital
-    ψ_e::Float64 = 0.6 # Increase probability of human capital
+    ψ_u::Float64 = 0.236 # Decrease probability of human capital
+    ψ_e::Float64 = 0.052# Increase probability of human capital
 
     U = zeros(pars.N_h, pars.T)
     S = zeros(pars.N_h, pars.T)
@@ -94,7 +94,7 @@ function trans_Tauchen(pars)
 
     Π_w = zeros(N_w)
 
-    ws = range(start = w1, stop = wN, length = N_w)
+    ws = range(start = w1, stop = wN, length = N_w) .+ μ_w
     d = ws[2] - ws[1]
     for (j, w_j) in enumerate(ws)
             if j == 1
@@ -127,7 +127,7 @@ function Bellman(pars, res)
         else
             # If h is at its lower bound, there's no decrease in human capital.
 
-            E_W_stay = sum(Π_w .* maximum.(eachcol([W[1,t+1,:]; U[1,t+1]])))
+            E_W_stay = sum(Π_w .* maximum.(eachcol(vcat(reshape(W[1,t+1,:], 1, N_w), reshape(ones(N_w).*U[1,t+1], 1, N_w)))))
             Us = b .- 0.5 .* s_grid .+ β .* (sqrt.(s_grid) .* E_W_stay .+ (1 .-sqrt.(s_grid)) .* U[1,t+1])
 
             U_cand[1,t] = findmax(Us)[1]
@@ -136,8 +136,8 @@ function Bellman(pars, res)
             
             # If h is at its upper bound, there's no increase in human capital.
 
-            E_W_down = sum(Π_w .* maximum.(eachcol([W[N_h-1,t+1,:]; U[N_h-1,t+1]])))
-            E_W_stay = sum(Π_w .* maximum.(eachcol([W[N_h,t+1,:]; U[N_h,t+1]])))
+            E_W_down = sum(Π_w .* maximum.(eachcol(vcat(reshape(W[N_h-1,t+1,:], 1, N_w), reshape(ones(N_w).*U[N_h-1,t+1], 1, N_w)))))
+            E_W_stay = sum(Π_w .* maximum.(eachcol(vcat(reshape(W[N_h,t+1,:], 1, N_w), reshape(ones(N_w).*U[N_h,t+1], 1, N_w)))))
             Us = b .- 0.5 .* s_grid .+ β .* ψ_u .* (sqrt.(s_grid) .* E_W_down .+ (1 .-sqrt.(s_grid)) .* U[N_h-1,t+1]) .+ β .* (1-ψ_u) .* (sqrt.(s_grid) .* E_W_stay .+ (1 .-sqrt.(s_grid)) .* U[N_h,t+1])
             
             U_cand[N_h,t] = findmax(Us)[1]
@@ -145,8 +145,8 @@ function Bellman(pars, res)
             W_cand[N_h,t,:] = w_grid .* h_grid[N_h] .+ β .* ((1-δ) .* W[N_h,t+1,:] .+ δ .* U[N_h,t+1])
             
             for i in 2:(N_h-1)
-                E_W_down = sum(Π_w .* maximum.(eachcol([W[i-1,t+1,:]; U[i-1,t+1]])))
-                E_W_stay = sum(Π_w .* maximum.(eachcol([W[i,t+1,:]; U[i,t+1]])))
+                E_W_down = sum(Π_w .* maximum.(eachcol(vcat(reshape(W[i-1,t+1,:], 1, N_w), reshape(ones(N_w).*U[i-1,t+1], 1, N_w)))))
+                E_W_stay = sum(Π_w .* maximum.(eachcol(vcat(reshape(W[i,t+1,:], 1, N_w), reshape(ones(N_w).*U[i,t+1], 1, N_w)))))
 
                 Us = b .- 0.5 .* s_grid .+ β .* ψ_u .* (sqrt.(s_grid) .* E_W_down .+ (1 .-sqrt.(s_grid)) .* U[i-1,t+1]) .+ β .* (1-ψ_u) .* (sqrt.(s_grid) .* E_W_stay .+ (1 .-sqrt.(s_grid)) .* U[i,t+1])
                 U_cand[i,t] = findmax(Us)[1]
@@ -183,15 +183,15 @@ VFI(pars, res)
 ##### 4. Simulation
 
 mutable struct dat_sim
-    H_path::Array(Float64, 2) # Human capital h
-    W_path::Array(Float64, 2) # Wages w
-    U_path::Array(Float64, 2) # 1 if employed, 0 if unemployed
+    H_path::Array{Float64, 2} # Human capital h
+    W_path::Array{Float64, 2} # Wages w
+    U_path::Array{Float64, 2} # 1 if employed, 0 if unemployed
 end
 
 function Init_sim(pars)
-    H_path::Array(Float64, 2) = zeros(pars.N_i, pars.T)
-    W_path::Array(Float64, 2) = zeros(pars.N_i, pars.T)
-    U_path::Array(Float64, 2) = zeros(pars.N_i, pars.T)
+    H_path::Array{Float64, 2} = zeros(pars.N_i, pars.T)
+    W_path::Array{Float64, 2} = zeros(pars.N_i, pars.T)
+    U_path::Array{Float64, 2} = zeros(pars.N_i, pars.T)
 
     simulated = dat_sim(H_path, W_path, U_path)
     return simulated
@@ -201,8 +201,12 @@ function simulate(pars, res)
     @unpack b, β, s_grid, h_grid, T, N_w, N_h, N_s, δ, N_i = pars
     @unpack Π_w, w_grid, U, S, W, ψ_e, ψ_u= res
 
-    μ_h = 2.5 # Mean of Uniform(2,3)
-    σ_h = sqrt(1/12) # Standard deviation of Uniform(2,3)
+    μ_h = 1.5 # Mean of Uniform(1,2)
+    σ_h = sqrt(1/12) # Standard deviation of Uniform(1,2)
+   
+    H_path::Array{Float64, 2} = zeros(pars.N_i, pars.T)
+    W_path::Array{Float64, 2} = zeros(pars.N_i, pars.T)
+    U_path::Array{Float64, 2} = zeros(pars.N_i, pars.T)
 
     H_path[:,1] = rand(Normal(μ_h, σ_h), N_i)
     U_path[:,1] .= 0
@@ -213,34 +217,63 @@ function simulate(pars, res)
     
     for i in 1:N_i
         for t in 2:T
-            probs = rand(Uniform(0,1), 2) # probs[1]: unemployment prob, probs[2]: human capital change prob
+            prob = rand(Uniform(0,1))
 
             if U_path[i,t-1] == 0
+                pi_s = sqrt(S[Int(H_path[i,t-1]), t-1])
+
+                p_unmatched_same = 0
+                p_unmatched_decr = 0
+                p_offer_same = zeros(N_w)
+                p_offer_decr = zeros(N_w)
+
+                for w_i in 1:N_w
+                    p_unmatched_same += pi_s * (1-ψ_u) * (Π_w[w_i] * ifelse(W[Int(H_path[i,t-1]), t, w_i] < U[Int(H_path[i,t-1]), t], 1, 0))
+                    p_unmatched_decr += pi_s * ψ_u * (Π_w[w_i] * ifelse(W[maximum([Int(H_path[i,t-1])-1, 1]), t, w_i] < U[maximum([Int(H_path[i,t-1])-1, 1]), t], 1, 0)) 
+                    p_offer_decr[w_i] = pi_s * ψ_u * Π_w[w_i] * ifelse(W[maximum([Int(H_path[i,t-1])-1, 1]), t, w_i] >= U[maximum([Int(H_path[i,t-1])-1, 1]), t], 1, 0)
+                    p_offer_same[w_i] = pi_s * (1-ψ_u) * Π_w[w_i] * ifelse(W[Int(H_path[i,t-1]), t, w_i] >= U[Int(H_path[i,t-1]), t], 1, 0)                                
+                end
+
+                p_unmatched_same = p_unmatched_same + (1-ψ_u) * (1-pi_s)
+                p_unmatched_decr = p_unmatched_decr + ψ_u * (1-pi_s)
+
+                p_noncon = [p_unmatched_same; p_offer_same; p_unmatched_decr; p_offer_decr]
+                ws_grid = [b; w_grid; b; w_grid]
+                p_grid = cumsum(p_noncon)
+                new_state = ceil(get_index(prob, p_grid))
                 
+                U_path[i,t] = ifelse(new_state != 1 & new_state != N_w+2 & p_noncon[Int(new_state)] > 0, 1, 0)
+                W_path[i,t] = ws_grid[Int(new_state)] * ifelse(p_noncon[Int(new_state)] > 0, 1, 0)
+                H_path[i,t] = H_path[i,t-1] - 1 * ifelse(new_state > (N_w + 1), 1, 0)
+
             elseif U_path[i,t-1] == 1
-                if probs[1] < δ
-                    U_path[i,t] = 0
-                    W_path[i,t] = b
-                    
-                    if probs[2] < ψ_e
-                        H_path[i,t] = minimum(H_path[i,t-1]+1, N_h)
-                    elseif probs[2] >= ψ_e
-                        H_path[i,t] = H_path[i,t-1]
-                    end
-                elseif probs[2] >= δ
+                p_grid = cumsum([(1-δ)*(1-ψ_e), (1-δ)*ψ_e, δ*(1-ψ_e), δ*ψ_e])
+                new_state = ceil(get_index(prob, p_grid))
+
+                if new_state == 1 # Employed and Same
                     U_path[i,t] = 1
                     W_path[i,t] = W_path[i,t-1]
-
-                    if probs[2] < ψ_e
-                        H_path[i,t] = minimum(H_path[i,t-1]+1, N_h)
-                    elseif probs[2] >= ψ_e
-                        H_path[i,t] = H_path[i,t-1]
-                    end
+                    H_path[i,t] = H_path[i,t-1]
+                elseif new_state == 2 # Employed and Higher
+                    U_path[i,t] = 1
+                    W_path[i,t] = W_path[i,t-1]
+                    H_path[i,t] = minimum([H_path[i,t-1]+1, N_h])
+                elseif new_state == 3 # Unemployed and Same
+                    U_path[i,t] = 0
+                    W_path[i,t] = b
+                    H_path[i,t] = H_path[i,t-1]
+                elseif new_state == 4 # Unemployed and Higher
+                    U_path[i,t] = 0
+                    W_path[i,t] = b
+                    H_path[i,t] = minimum([H_path[i,t-1]+1, N_h])
                 end
             end
         end
-    
     end
-    
+    return U_path, H_path, W_path
 end
 
+##### 6. Get simulated data
+
+simulated = Init_sim(pars)
+simulated.U_path, simulated.H_path, simulated.W_path = simulate(pars, res)
