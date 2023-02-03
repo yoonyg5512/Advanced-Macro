@@ -1,7 +1,7 @@
 ######################################################################
 ##### Life-cycle Model with random search and human capital      #####
 ######################################################################
-# Prepared by Yeonggyu Yun, Stefano Lord, and Fernando de Lima Lopes #
+# Prepared by Yeonggyu Yun, Stefano Lord-Medrano, and Fernando de Lima Lopes #
 ######################################################################
 
 using Parameters, Statistics, Random, Distributions, Interpolations, Optim, Plots, CSV, Tables
