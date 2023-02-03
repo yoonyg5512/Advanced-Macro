@@ -242,9 +242,9 @@ function simulate(pars, res)
                 p_grid = cumsum(p_noncon)
                 new_state = ceil(get_index(prob, p_grid))
                 
-                U_path[i,t] = ifelse(new_state != 1 & new_state != N_w+2 & p_noncon[Int(new_state)] > 0, 1, 0)
+                U_path[i,t] = ifelse(new_state !== 1 && new_state !== (N_w+2) && p_noncon[Int(new_state)] > 0, 1, 0)
                 W_path[i,t] = ws_grid[Int(new_state)] * ifelse(p_noncon[Int(new_state)] > 0, 1, 0)
-                H_path[i,t] = H_path[i,t-1] - 1 * ifelse(new_state > (N_w + 1), 1, 0)
+                H_path[i,t] = maximum([H_path[i,t-1] - 1 * ifelse(new_state > (N_w + 1), 1, 0), 1])
 
             elseif U_path[i,t-1] == 1
                 p_grid = cumsum([(1-δ)*(1-ψ_e), (1-δ)*ψ_e, δ*(1-ψ_e), δ*ψ_e])
@@ -277,3 +277,4 @@ end
 
 simulated = Init_sim(pars)
 simulated.U_path, simulated.H_path, simulated.W_path = simulate(pars, res)
+
