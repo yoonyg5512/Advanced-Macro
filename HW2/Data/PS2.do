@@ -84,3 +84,42 @@ by id: replace plus_5 = 1 if year - 6 == 5 & id <=500
 
 xtreg earnings i.year minus_4 minus_3 minus_2 minus_1 minus_0 plus_1 plus_2 plus_3 plus_4 plus_5, fe vce(robust)
 coefplot, vertical keep(minus_4 minus_3 minus_2 minus_1 minus_0 plus_1 plus_2 plus_3 plus_4 plus_5) nolabel recast(connected)
+
+coefplot, vertical drop(_cons minus_4 minus_3 minus_2 minus_1 minus_0 plus_1 plus_2 plus_3 plus_4 plus_5) nolabel
+
+///////////////////////////////////////////////////////////////////////////////
+* Part 4: Working with simulated data
+* Clear workspace
+clear all
+* Use simulated panel from model
+cd "/Users/smlm/Desktop/Datasets - Metrics/PSID data/PS2"
+use Simulated_Panel.dta
+* Add package for winsorizing data
+ssc install winsor, replace
+
+* Plotting distribution of human capital among employed and unemployed
+kdensity h_cap if status == 1, kernel(epanechnikov) generate(pts_emp den_emp) nograph
+kdensity h_cap if status == 0, kernel(epanechnikov) generate(pts_u den_u) nograph
+twoway (area den_emp pts_emp) (area den_u pts_u)
+
+* Winsorizing to replace extreme values with 10th and 90th percentile
+winsor h_cap, p(.05) gen(h_cap_w05)
+kdensity h_cap_w05 if status == 1, kernel(epanechnikov) generate(pts_empw den_empw) nograph
+kdensity h_cap_w05 if status == 0, kernel(epanechnikov) generate(pts_uw den_uw) nograph
+twoway (area den_empw pts_empw) (area den_uw pts_uw)
+
+* Clean
+drop pts_emp den_emp pts_u den_u h_cap_w05 pts_empw den_empw pts_uw den_uw
+
+* Average gain in earnings for individuals who are working for two cons. years
+xtset id month
+gen earnings = w*h_cap
+* Consecutive years
+gen consec = 0
+by id: replace consec = 1 if (status + status[_n-1])/2 == 1
+* Statistic
+by id: gen gain = earnings - earnings[_n-1] if consec == 1
+summ gain
+
+replace status = -1 if status == 0
+bysort id (month): gen statuschg = sum(status~=status[_n-1] & _n~=1)*status
