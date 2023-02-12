@@ -4,7 +4,7 @@
 # Prepared by Yeonggyu Yun, Stefano Lord, and Fernando de Lima Lopes #
 ######################################################################
 
-using Parameters, Statistics, Random, Distributions, Interpolations, Optim, Plots, CSV, Tables
+using Parameters, Statistics, Plots, CSV, Tables
 
 ##### 1. Housekeeping
 
@@ -88,7 +88,7 @@ function get_index(val::Float64, grid::Array{Float64,1})
     return index
 end
 
-## Bellman function iteration for a birth cohort
+## 2. Bellman function iteration for a birth cohort
 
 function Bellman(pars, res)
     @unpack T, N_b, N_h, N_ω, β, δ, z, σ, r, ξ, κ, τ, ω_grid, h_grid, b_grid, p_L, p_H = pars
@@ -97,8 +97,9 @@ function Bellman(pars, res)
     for t in collect(T:-1:1)
         if t == T
             B[:, t, :, :] .= 0
-            for (i_ω, ω) in enumerate(ω_grid)
-                for (i_h, h) in enumerate(h_grid)
+            for (i_h, h) in enumerate(h_grid)
+                for (i_ω, ω) in enumerate(ω_grid)
+                
                     J[i_ω, t, i_h] = (1 - ω) * h
                     θ[i_ω, t, i_h] = ((κ / J[i_ω, t, i_h])^(-ξ) - 1)^(1/ξ)
                     
@@ -134,11 +135,15 @@ function Bellman(pars, res)
                         W_cand = zeros(N_b)
                         
                         for (i_pf, pf) in enumerate(b_grid)
+                            FB_stay = (1-δ) * W[i_pf, t+1, i_h, i_ω] + δ * U[i_pf, t+1, i_h]
+                            FB_incr = (1-δ) * W[i_pf, t+1, minimum(i_h+1, N_h), i_ω] + δ * U[i_pf, t+1, minimum(i_h+1, N_h)]
+                            FB = FB_stay * (1-p_H) + FB_incr * p_H
 
+                            W_cand[i_pf] = ((ω * h * (1-τ) + b - pf / (1 + r))^(1-σ) - 1) / (1-σ) + β * FB
                         end
-                        
-                        C[i_b, t, i_h, 1+i_ω] = (1 - τ) * ω * h + b
-                        W[i_b, t, i_h, i_ω] = (C[i_b, t, i_h, 1+i_ω]^(1-σ) - 1) / (1-σ)
+                        W[i_b, t, i_h, i_ω] = findmax(W_cand)[1]
+                        B[i_b, t, i_h, 1 + i_ω] = b_grid[findmax(W_cand)[2]]
+                        C[i_b, t, i_h, 1+i_ω] = (1 - τ) * ω * h + b - B[i_b, t, i_h, 1 + i_ω]
                     end
                 end
             end       
@@ -146,4 +151,4 @@ function Bellman(pars, res)
     end
 end
 
-## Simulate data with multiple cohorts
+## 3. Simulate data with multiple cohorts
