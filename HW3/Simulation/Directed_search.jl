@@ -21,7 +21,7 @@ Random.seed!(1234)
     κ::Float64 = 0.995 # Vacancy cost
     τ::Float64 = 0.2 # Marginal tax rate
     p_L::Float64 = 0.5 # Decrease probability of human capital
-    p_H::Float64 = 0.05 # Increase probability of human capital
+    p_H::Float64 = 0.4 # Increase probability of human capital
 
     # Grids for human capital h and saving choice b and piece-rate ω
 
@@ -260,10 +260,10 @@ function Simulate(pars, res)
             if T_total[i,t-1] == T
                 id_total[i,t] = id_total[i,t-1] + 1
                 T_total[i,t] = 1
-                B_total[i,t] = 0
-                U_total[i,t] = 1
+                B_total[i,t] = 0 # Begin with zero asset
+                U_total[i,t] = 1 # Begin unemployed
                 W_total[i,t] = z
-                H_total[i,t] = rand(1:N_h)
+                H_total[i,t] = 1 # Begin at the lowest level of human capital 
                 C_total[i,t] = C[1,1,1,1]
                 S = (W_total[i,t] + B_total[i,t] - C_total[i,t]) * (1+r)
                 omega = 0
@@ -286,6 +286,7 @@ function Simulate(pars, res)
                     p_find_decr = (θ_find_decr^(-ξ) + 1)^(-1/ξ)
                     
                     p_grid = [p_L * p_find_decr, p_L * (1-p_find_decr), (1-p_L) * p_find_stay, (1-p_L) * (1-p_find_stay)]
+                    p_grid[p_grid .< 0.000001 ] .= 0.000001
                     p_grid = cumsum(p_grid)
                     p_case = ceil(get_index(prob, p_grid))
 
@@ -295,13 +296,13 @@ function Simulate(pars, res)
 
                         omega = omega_d
                         W_total[i,t] = (1-τ) * ω_grid[Int(omega)] * h_grid[H_total[i,t]]
-                        C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], ifelse(U_total[i,t] == 1, 1, 1+Int(omega))]
+                        C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], 1+Int(omega)]
                         S = (W_total[i,t] + B_total[i,t] - C_total[i,t]) * (1+r)
                     elseif p_case == 2
                         U_total[i,t] = 1
                         H_total[i,t] = max(H_total[i,t-1] - 1, 1)
                         W_total[i,t] = z
-                        C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], ifelse(U_total[i,t] == 1, 1, 1+Int(omega))]
+                        C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], 1]
                         S = (W_total[i,t] + B_total[i,t] - C_total[i,t]) * (1+r)
                     elseif p_case == 3
                         U_total[i,t] = 0
@@ -309,13 +310,13 @@ function Simulate(pars, res)
 
                         omega = omega_s
                         W_total[i,t] = (1-τ) * ω_grid[Int(omega)] * h_grid[H_total[i,t]]
-                        C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], ifelse(U_total[i,t] == 1, 1, 1+Int(omega))]
+                        C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], 1+Int(omega)]
                         S = (W_total[i,t] + B_total[i,t] - C_total[i,t]) * (1+r)
                     elseif p_case == 4
                         U_total[i,t] = 1
                         H_total[i,t] = H_total[i,t-1]
                         W_total[i,t] = z
-                        C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], ifelse(U_total[i,t] == 1, 1, 1+Int(omega))]
+                        C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], 1]
                         S = (W_total[i,t] + B_total[i,t] - C_total[i,t]) * (1+r)
                     end
                     
