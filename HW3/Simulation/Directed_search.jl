@@ -4,7 +4,7 @@
 # Prepared by Yeonggyu Yun, Stefano Lord, and Fernando de Lima Lopes #
 ######################################################################
 
-using Parameters, Statistics, Plots, CSV, Tables, Random, Distributions
+using Parameters, Statistics, Plots, CSV, Tables, Random, Distributions, DataFrames
 
 ##### 1. Housekeeping
 
@@ -349,3 +349,22 @@ VFI(pars, res)
 
 sim = Init_sim(pars)
 Run_simul(pars, res, sim)
+
+## Combine into panel data
+
+quarters = repeat(1:120,1000)
+
+panel = zeros(120*1000, 8)
+
+panel[:,1] = vec(sim.id_sim')
+panel[:,2] = quarters 
+panel[:,3] = vec(sim.B_sim') # Wealth
+panel[:,4] = vec(sim.U_sim') # Unemployment status
+panel[:,5] = vec(sim.T_sim') # Ages (in quarters)
+panel[:,6] = vec(sim.H_sim') # Human capital
+panel[:,7] = vec(sim.W_sim') # After tax/transfer earnings
+panel[:,8] = vec(sim.C_sim') # Consumption
+
+panel = DataFrame(panel, :auto)
+rename!(panel, Symbol.(["ID", "Year", "Wealth", "Unemployment", "Age", "Human Capital", "Earnings", "Consumption"]))
+CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 3/HW/Simulated panel.csv", panel, writeheader = true)
