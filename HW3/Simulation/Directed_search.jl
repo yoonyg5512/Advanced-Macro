@@ -116,16 +116,16 @@ function Bellman(pars, res)
 
                     for (i_ω, ω) in enumerate(ω_grid)
                 
-                    J[i_ω, t, i_h] = (1 - ω) * h
+                        J[i_ω, t, i_h] = (1 - ω) * h
 
-                    if κ / J[i_ω, t, i_h] < 1
-                        θ[i_ω, t, i_h] = ((κ / J[i_ω, t, i_h])^(-ξ) - 1)^(1/ξ)
-                    elseif κ / J[i_ω, t, i_h] >= 1
-                        θ[i_ω, t, i_h] = 0
-                    end
-                    
-                    C[i_b, t, i_h, 1+i_ω] = (1 - τ) * ω * h + b
-                    W[i_b, t, i_h, i_ω] = (C[i_b, t, i_h, 1+i_ω]^(1-σ) - 1) / (1-σ)
+                        if κ / J[i_ω, t, i_h] < 1
+                            θ[i_ω, t, i_h] = ((κ / J[i_ω, t, i_h])^(-ξ) - 1)^(1/ξ)
+                        elseif κ / J[i_ω, t, i_h] >= 1
+                            θ[i_ω, t, i_h] = 0
+                        end
+                        
+                        C[i_b, t, i_h, 1+i_ω] = (1 - τ) * ω * h + b
+                        W[i_b, t, i_h, i_ω] = (C[i_b, t, i_h, 1+i_ω]^(1-σ) - 1) / (1-σ)
                     end
                 end
             end   
@@ -148,7 +148,7 @@ function Bellman(pars, res)
                            
                         FB = FB_stay * (1-p_L) + FB_decr * p_L
 
-                        U_cand[i_pf] = ((z + b - pf / (1 + r))^(1-σ) - 1) / (1-σ) + β * FB
+                        U_cand[i_pf] = ifelse(z + b - pf / (1 + r) <= 0, -Inf, ((z + b - pf / (1 + r))^(1-σ) - 1) / (1-σ) + β * FB)
                         E_cand[i_pf,:] = [w1, w2]
                     end
                     pol = findmax(U_cand)
@@ -177,7 +177,7 @@ function Bellman(pars, res)
                             FB_incr = (1-δ) * W[i_pf, t+1, min(i_h+1, N_h), i_ω] + δ * U[i_pf, t+1, min(i_h+1, N_h)]
                             FB = FB_stay * (1-p_H) + FB_incr * p_H
 
-                            W_cand[i_pf] = ((ω * h * (1-τ) + b - pf / (1 + r))^(1-σ) - 1) / (1-σ) + β * FB
+                            W_cand[i_pf] = ifelse(ω * h * (1-τ) + b - pf / (1 + r) <= 0, -Inf, ((ω * h * (1-τ) + b - pf / (1 + r))^(1-σ) - 1) / (1-σ) + β * FB)
                         end
                         pol_e = findmax(W_cand)
                         W[i_b, t, i_h, i_ω] = pol_e[1]
