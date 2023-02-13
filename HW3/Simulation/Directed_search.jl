@@ -91,6 +91,7 @@ function get_index(val::Float64, grid::Array{Float64,1})
 end
 
 ## 2. Bellman function iteration for a birth cohort
+## Super slow, so needs to improve on the algorithm...
 
 function Bellman(pars, res)
     @unpack T, N_b, N_h, N_ω, β, δ, z, σ, r, ξ, κ, τ, ω_grid, h_grid, b_grid, p_L, p_H = pars
@@ -104,6 +105,7 @@ function Bellman(pars, res)
     E = zeros(N_b, T-1, N_h, 2)
 
     for t in collect(T:-1:1)
+        println(t)
         if t == T
             B[:, t, :, :] .= 0
             for (i_h, h) in enumerate(h_grid)
@@ -138,24 +140,32 @@ function Bellman(pars, res)
                     end
                     
                     for (i_b, b) in enumerate(b_grid)
-                        
+
                         U_cand = zeros(N_b)
+                        E_cand = zeros(N_b, 2)
                         for (i_pf, pf) in enumerate(b_grid)
                            FB_s = (θ[:, t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ) .* W[i_pf, t+1, i_h, :] .+ (1 .- (θ[:, t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, i_h]
-                           
-                           FB_stay = findmax(FB_s)[1]
-                           E[i_b, t, i_h, 1] = ω_grid[findmax(FB_s)[2]]
+                           FB_s[isnan.(FB_s)] = (1 .- (θ[isnan.(FB_s), t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, i_h]
+
+                           FB_stay, w1 = findmax(FB_s)
                            
                            FB_d = (θ[:, t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ) .* W[i_pf, t+1, max(i_h-1, 1), :] .+ (1 .- (θ[:, t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, max(i_h-1, 1)]
-                           FB_decr = findmax(FB_d)[1]
-                           E[i_b, t, i_h, 2] = ω_grid[findmax(FB_d)[2]]
+                           FB_d[isnan.(FB_d)] = (1 .- (θ[isnan.(FB_d), t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, max(i_h-1, 1)]
 
+                           FB_decr, w2 = findmax(FB_d)
+                           
                            FB = FB_stay * (1-p_L) + FB_decr * p_L
 
                            U_cand[i_pf] = ((z + b - pf / (1 + r))^(1-σ) - 1) / (1-σ) + β * FB
+                           E_cand[i_pf,:] = [w1, w2]
                         end
-                        U[i_b, t, i_h] = findmax(U_cand)[1]
-                        B[i_b, t, i_h, 1] = b_grid[findmax(U_cand)[2]]
+                        pol = findmax(U_cand)
+
+                        U[i_b, t, i_h] = pol[1]
+                        E[i_b, t, i_h, 1] = ω_grid[Int(E_cand[pol[2],1])]
+                        E[i_b, t, i_h, 2] = ω_grid[Int(E_cand[pol[2],2])]
+
+                        B[i_b, t, i_h, 1] = b_grid[pol[2]]
                         C[i_b, t, i_h, 1] = b_grid[i_b] + z - B[i_b, t, i_h, 1] / (1 + r)
 
                         W_cand = zeros(N_b)
@@ -167,8 +177,9 @@ function Bellman(pars, res)
 
                             W_cand[i_pf] = ((ω * h * (1-τ) + b - pf / (1 + r))^(1-σ) - 1) / (1-σ) + β * FB
                         end
-                        W[i_b, t, i_h, i_ω] = findmax(W_cand)[1]
-                        B[i_b, t, i_h, 1 + i_ω] = b_grid[findmax(W_cand)[2]]
+                        pol_e = findmax(W_cand)
+                        W[i_b, t, i_h, i_ω] = pol_e[1]
+                        B[i_b, t, i_h, 1 + i_ω] = b_grid[pol_e[2]]
                         C[i_b, t, i_h, 1+i_ω] = (1 - τ) * ω * h + b - B[i_b, t, i_h, 1 + i_ω]
                     end
                 end
@@ -325,5 +336,8 @@ end
 
 pars, res = Initialize()
 VFI(pars, res)
+
+sim = Init_sim(pars, res)
+Run_simul(pars, res, sim)
 
 ## Analysis
