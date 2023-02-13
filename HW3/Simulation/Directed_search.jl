@@ -4,7 +4,7 @@
 # Prepared by Yeonggyu Yun, Stefano Lord, and Fernando de Lima Lopes #
 ######################################################################
 
-using Parameters, Statistics, Plots, CSV, Tables
+using Parameters, Statistics, Plots, CSV, Tables, Random
 
 ##### 1. Housekeeping
 
@@ -49,6 +49,7 @@ mutable struct Results
     B::Array{Float64, 4} # Asset by unemployment status (and wage), age, human capital, and current net worth
     C::Array{Float64, 4} # Consumption by unemployment status (and wage), age, human capital, and current net worth
     θ::Array{Float64, 3} # Labor market tightness by age, piece rate, and human capital
+    E::Array{Float64, 4} # Wage choice when unemployed by wealth, age, human capital level, and two occasions of staying and decreasing the human capital
 
 end
 
@@ -63,9 +64,10 @@ function Initialize()
 
     B::Array{Float64, 4} = zeros(pars.N_b, pars.T, pars.N_h, 1+pars.N_ω) # Asset by unemployment status (and wage), age, human capital, and current net worth
     C::Array{Float64, 4} = zeros(pars.N_b, pars.T, pars.N_h, 1+pars.N_ω) # Consumption by unemployment status (and wage), age, human capital, and current net worth
-    θ::Array{Float64, 3} = zeros(pars.N_ω, pars.T, pars.N_h)# Labor market tightness by age, piece rate, and human capital
+    θ::Array{Float64, 3} = zeros(pars.N_ω, pars.T, pars.N_h) # Labor market tightness by age, piece rate, and human capital
+    E::Array{Float64, 4} = zeros(pars.N_b, pars.T-1, pars.N_h, 2)
 
-    res = Results(U, W, J, B, C, θ)
+    res = Results(U, W, J, B, C, θ, E)
     return pars, res
 end
 
@@ -92,7 +94,14 @@ end
 
 function Bellman(pars, res)
     @unpack T, N_b, N_h, N_ω, β, δ, z, σ, r, ξ, κ, τ, ω_grid, h_grid, b_grid, p_L, p_H = pars
-    @unpack U, B, C, J, W, θ = res
+
+    U = zeros(N_b, T, N_h) # Unemployed
+    W = zeros(N_b, T, N_h, N_ω) # Employed
+    J = zeros(N_ω, T, N_h) # Firms
+    B = zeros(N_b, T, N_h, 1+N_ω) # Asset by unemployment status (and wage), age, human capital, and current net worth
+    C = zeros(N_b, T, N_h, 1+N_ω) # Consumption by unemployment status (and wage), age, human capital, and current net worth
+    θ = zeros(N_ω, T, N_h) # Labor market tightness by age, piece rate, and human capital
+    E = zeros(N_b, T-1, N_h, 2)
 
     for t in collect(T:-1:1)
         if t == T
@@ -101,7 +110,12 @@ function Bellman(pars, res)
                 for (i_ω, ω) in enumerate(ω_grid)
                 
                     J[i_ω, t, i_h] = (1 - ω) * h
-                    θ[i_ω, t, i_h] = ((κ / J[i_ω, t, i_h])^(-ξ) - 1)^(1/ξ)
+
+                    if κ / J[i_ω, t, i_h] < 1
+                        θ[i_ω, t, i_h] = ((κ / J[i_ω, t, i_h])^(-ξ) - 1)^(1/ξ)
+                    elseif κ / J[i_ω, t, i_h] >= 1
+                        θ[i_ω, t, i_h] = 0
+                    end
                     
                     for (i_b, b) in enumerate(b_grid)
                         C[i_b, t, i_h, 1] = z + b
@@ -115,15 +129,27 @@ function Bellman(pars, res)
         else 
             for (i_ω, ω) in enumerate(ω_grid)
                 for (i_h, h) in enumerate(h_grid)
-                    J[i_ω, t, i_h] = (1 - ω) * h + β * (p_H * (1 - δ) * J[i_ω, t+1, minimum(i_h + 1, N_h)] + (1-p_H) * (1 - δ) * J[i_ω, t+1, i_h])
-                    θ[i_ω, t, i_h] = ((κ / J[i_ω, t, i_h])^(-ξ) - 1)^(1/ξ)
+                    J[i_ω, t, i_h] = (1 - ω) * h + β * (p_H * (1 - δ) * J[i_ω, t+1, min(i_h + 1, N_h)] + (1-p_H) * (1 - δ) * J[i_ω, t+1, i_h])
+
+                    if κ / J[i_ω, t, i_h] < 1
+                        θ[i_ω, t, i_h] = ((κ / J[i_ω, t, i_h])^(-ξ) - 1)^(1/ξ)
+                    elseif κ / J[i_ω, t, i_h] >= 1
+                        θ[i_ω, t, i_h] = 0
+                    end
                     
                     for (i_b, b) in enumerate(b_grid)
                         
                         U_cand = zeros(N_b)
                         for (i_pf, pf) in enumerate(b_grid)
-                           FB_stay = findmax((θ[:, t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ) .* W[i_pf, t+1, i_h, 2:(N_ω+1)] .+ (1 - (θ[:, t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, i_h])[1]
-                           FB_decr = findmax((θ[:, t+1, maximum(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ) .* W[i_pf, t+1, maximum(i_h-1, 1), 2:(N_ω+1)] .+ (1 - (θ[:, t+1, maximum(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, maximum(i_h-1, 1)])[1]
+                           FB_s = (θ[:, t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ) .* W[i_pf, t+1, i_h, :] .+ (1 .- (θ[:, t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, i_h]
+                           
+                           FB_stay = findmax(FB_s)[1]
+                           E[i_b, t, i_h, 1] = ω_grid[findmax(FB_s)[2]]
+                           
+                           FB_d = (θ[:, t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ) .* W[i_pf, t+1, max(i_h-1, 1), :] .+ (1 .- (θ[:, t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, max(i_h-1, 1)]
+                           FB_decr = findmax(FB_d)[1]
+                           E[i_b, t, i_h, 2] = ω_grid[findmax(FB_d)[2]]
+
                            FB = FB_stay * (1-p_L) + FB_decr * p_L
 
                            U_cand[i_pf] = ((z + b - pf / (1 + r))^(1-σ) - 1) / (1-σ) + β * FB
@@ -136,7 +162,7 @@ function Bellman(pars, res)
                         
                         for (i_pf, pf) in enumerate(b_grid)
                             FB_stay = (1-δ) * W[i_pf, t+1, i_h, i_ω] + δ * U[i_pf, t+1, i_h]
-                            FB_incr = (1-δ) * W[i_pf, t+1, minimum(i_h+1, N_h), i_ω] + δ * U[i_pf, t+1, minimum(i_h+1, N_h)]
+                            FB_incr = (1-δ) * W[i_pf, t+1, min(i_h+1, N_h), i_ω] + δ * U[i_pf, t+1, min(i_h+1, N_h)]
                             FB = FB_stay * (1-p_H) + FB_incr * p_H
 
                             W_cand[i_pf] = ((ω * h * (1-τ) + b - pf / (1 + r))^(1-σ) - 1) / (1-σ) + β * FB
@@ -149,6 +175,155 @@ function Bellman(pars, res)
             end       
         end
     end
+
+    return U, B, C, J, W, θ, E
+end
+
+function VFI(pars, res)
+    res.U, res.B, res.C, res.J, res.W, res.θ, res.E = Bellman(pars, res)
 end
 
 ## 3. Simulate data with multiple cohorts
+
+mutable struct Simulated
+    B_sim::Array{Float64, 2} # Wealth
+    C_sim::Array{Float64, 2} # Consumption
+    W_sim::Array{Float64, 2} # After-tax/transfer wage
+    U_sim::Array{Int64, 2} # Unemployment stats (1: unemployment, 0: employment)
+    T_sim::Array{Int64, 2} # Ages
+    H_sim::Array{Float64, 2} # Human capital
+end
+
+function Init_sim(pars)
+    B_sim::Array{Float64, 2} = zeros(pars.N_i, 180) 
+    C_sim::Array{Float64, 2} = zeros(pars.N_i, 180) 
+    W_sim::Array{Float64, 2} = zeros(pars.N_i, 180) 
+    U_sim::Array{Int64, 2} = zeros(pars.N_i, 180) 
+    T_sim::Array{Int64, 2} = zeros(pars.N_i, 180)
+    H_sim::Array{Int64, 2} = zeros(pars.N_i, 180)
+
+    sim = Simulated(B_sim, C_sim, W_sim, U_sim, T_sim, H_sim)
+end
+
+function Simulate(pars, res)
+    @unpack δ, p_H, p_L, T, N_i, N_h, N_b, N_ω, z, h_grid, ω_grid, b_grid, τ, r = pars
+    @unpack B, C, θ, E = res
+
+    total::Int64 = 300
+    burnin::Int64 = T
+
+    B_total = zeros(N_i, total)
+    C_total = zeros(N_i, total)
+    W_total = zeros(N_i, total)
+    U_total::Array{Int64, 2} = zeros(N_i, total)
+    T_total::Array{Int64, 2} = zeros(N_i, total)
+    H_total::Array{Int64, 2} = zeros(N_i, total)
+
+    init_ages = rand(1:T, N_i)
+    for i in 1:N_i
+        T_total[i,1] = init_ages[i]
+        h_init = ifelse(init_ages[i] == 1, 1, rand(1:N_h))
+        u_init = ifelse(init_ages[i] == 1, 1, rand(1:2)-1)
+        b_init = ifelse(init_ages[i] == 1, 1, rand(1:N_b))
+        w_init = ifelse(u_init == 1, 0, rand(1:N_ω))
+
+        B_total[i,1] = b_grid[b_init]
+        W_total[i,1] = ifelse(u_init == 1, z, ω_grid[w_init] * h_grid[h_init] * (1- τ))
+        U_total[i,1] = u_init
+        C_total[i,1] = C[b_init, T_total[i,1], h_init, ifelse(u_init == 1, 1, 1+w_init)]
+        H_total[i,1] = h_init
+        S = B[b_init, T_total[i,1], h_init, ifelse(u_init == 1, 1, 1+w_init)]
+        omega = w_init
+
+        for t in 2:total
+            prob = rand(Uniform(0,1))
+
+            if T_total[i,t-1] == T
+
+                T_total[i,t] = 1
+                B_total[i,t] = 0
+                U_total[i,t] = 1
+                W_total[i,t] = z
+                H_total[i,t] = 1
+                C_total[i,t] = C[1,1,1,1]
+                S = (W_total[i,t] + B_total[i,t] - C_total) * (1+r)
+                omega = 0
+
+            elseif T_total[i,t-1] < T
+
+                T_total[i,t] = T_total[i,t-1] + 1
+                B_total[i,t] = S
+                i_b = round(get_index(B_total[i,t], b_grid))
+                
+                if U_total[i,t-1] == 1
+                    i_b_pre = round(get_index(B_total[i,t-1], b_grid))
+                    omega_s = round(get_index(E[Int(i_b_pre), T_total[i,t-1], H_total[i,t-1], 1], ω_grid))
+                    omega_d = round(get_index(E[Int(i_b_pre), T_total[i,t-1], max(H_total[i,t-1]-1, 1), 2], ω_grid))
+                    θ_find_stay = θ[Int(omega_s), T_total[i,t], H_total[i,t-1]]
+                    p_find_stay = (θ_find_stay^(-ξ) + 1)^(-1/ξ)
+                    θ_find_decr = θ[Int(omega_d), T_total[i,t], max(H_total[i,t-1]-1, 1), 2]
+                    p_find_decr = (θ_find_decr^(-ξ) + 1)^(-1/ξ)
+                    
+                    p_grid = [p_L * p_find_decr, p_L * (1-p_find_decr), (1-p_L) * p_find_stay, (1-p_L) * (1-p_find_stay)]
+                    p_grid = cumsum(p_grid)
+                    p_case = ceil(get_index(prob, p_grid))
+
+                    if p_case == 1
+                        U_total[i,t] = 0
+                        H_total[i,t] = max(H_total[i,t-1] - 1, 1)
+
+                        omega = omega_d
+                        W_total[i,t] = (1-τ) * ω_grid[Int(omega)] * h_grid[H_total[i,t]]
+                        C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], ifelse(U_total[i,t] == 1, 1, 1+Int(omega))]
+                        S = (W_total[i,t] + B_total[i,t] - C_total[i,t]) * (1+r)
+                    elseif p_case == 2
+                        U_total[i,t] = 1
+                        H_total[i,t] = max(H_total[i,t-1] - 1, 1)
+                        W_total[i,t] = z
+                        C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], ifelse(U_total[i,t] == 1, 1, 1+Int(omega))]
+                        S = (W_total[i,t] + B_total[i,t] - C_total[i,t]) * (1+r)
+                    elseif p_case == 3
+                        U_total[i,t] = 0
+                        H_total[i,t] = H_total[i,t-1]
+
+                        omega = omega_s
+                        W_total[i,t] = (1-τ) * ω_grid[Int(omega)] * h_grid[H_total[i,t]]
+                        C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], ifelse(U_total[i,t] == 1, 1, 1+Int(omega))]
+                        S = (W_total[i,t] + B_total[i,t] - C_total[i,t]) * (1+r)
+                    elseif p_case == 4
+                        U_total[i,t] = 1
+                        H_total[i,t] = H_total[i,t-1]
+                        W_total[i,t] = z
+                        C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], ifelse(U_total[i,t] == 1, 1, 1+Int(omega))]
+                        S = (W_total[i,t] + B_total[i,t] - C_total[i,t]) * (1+r)
+                    end
+                    
+                elseif U_total[i, t-1] == 0
+                    p_grid = [δ * p_H, δ * (1-p_H), (1-δ) * p_H, (1-δ) * (1-p_H)]
+                    p_grid = cumsum(p_grid)
+                    p_case = ceil(get_index(prob, p_grid))
+                    
+                    U_total[i,t] = ifelse(p_case ∈ [1,2], 1, 0)
+                    H_total[i,t] = ifelse(p_case ∈ [1,3], min(H_total[i,t-1]+1, N_h), H_total[i,t-1])
+                    W_total[i,t] = ifelse(U_total[i,t] == 1, z, (1-τ) * ω_grid[Int(omega)] * h_grid[H_total[i,t]])
+                    C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], ifelse(U_total[i,t] == 1, 1, 1+Int(omega))]
+                    S = (W_total[i,t] + B_total[i,t] - C_total[i,t]) * (1+r)
+                end
+
+            end
+        end
+    end
+
+    return B_total[:, (total-burnin):total], T_total[:, (total-burnin):total], U_total[:, (total-burnin):total], H_total[:, (total-burnin):total], W_total[:, (total-burnin):total], C_total[:, (total-burnin):total]
+end
+
+function Run_simul(pars, res, sim)
+    sim.B_sim, sim.T_sim, sim.U_sim, sim.H_sim, sim.W_sim, sim.C_sim = Simulate(pars, res)
+end
+
+## Run all
+
+pars, res = Initialize()
+VFI(pars, res)
+
+## Analysis
