@@ -205,6 +205,7 @@ mutable struct Simulated
     U_sim::Array{Int64, 2} # Unemployment stats (1: unemployment, 0: employment)
     T_sim::Array{Int64, 2} # Ages
     H_sim::Array{Float64, 2} # Human capital
+    id_sim::Array{Float64, 2} # Individual id (in panel data)
 end
 
 function Init_sim(pars)
@@ -214,12 +215,13 @@ function Init_sim(pars)
     U_sim::Array{Int64, 2} = zeros(pars.N_i, 180) 
     T_sim::Array{Int64, 2} = zeros(pars.N_i, 180)
     H_sim::Array{Int64, 2} = zeros(pars.N_i, 180)
+    id_sim::Array{Int64, 2} = zeros(pars.N_i, 180)
 
-    sim = Simulated(B_sim, C_sim, W_sim, U_sim, T_sim, H_sim)
+    sim = Simulated(B_sim, C_sim, W_sim, U_sim, T_sim, H_sim, id_sim)
 end
 
 function Simulate(pars, res)
-    @unpack δ, p_H, p_L, T, N_i, N_h, N_b, N_ω, z, h_grid, ω_grid, b_grid, τ, r = pars
+    @unpack δ, p_H, p_L, T, N_i, N_h, N_b, N_ω, z, h_grid, ω_grid, b_grid, τ, r, ξ = pars
     @unpack B, C, θ, E = res
 
     total::Int64 = 300
@@ -231,9 +233,15 @@ function Simulate(pars, res)
     U_total::Array{Int64, 2} = zeros(N_i, total)
     T_total::Array{Int64, 2} = zeros(N_i, total)
     H_total::Array{Int64, 2} = zeros(N_i, total)
+    id_total::Array{Int64, 2} = zeros(N_i, total)
 
     init_ages = rand(1:T, N_i)
     for i in 1:N_i
+        if i == 1
+            id_total[i,1] = 1
+        else
+            id_total[i,1] = id_total[i-1, total] + 1
+        end
         T_total[i,1] = init_ages[i]
         h_init = ifelse(init_ages[i] == 1, 1, rand(1:N_h))
         u_init = ifelse(init_ages[i] == 1, 1, rand(1:2)-1)
@@ -252,18 +260,18 @@ function Simulate(pars, res)
             prob = rand(Uniform(0,1))
 
             if T_total[i,t-1] == T
-
+                id_total[i,t] = id_total[i,t-1] + 1
                 T_total[i,t] = 1
                 B_total[i,t] = 0
                 U_total[i,t] = 1
                 W_total[i,t] = z
                 H_total[i,t] = 1
                 C_total[i,t] = C[1,1,1,1]
-                S = (W_total[i,t] + B_total[i,t] - C_total) * (1+r)
+                S = (W_total[i,t] + B_total[i,t] - C_total[i,t]) * (1+r)
                 omega = 0
 
             elseif T_total[i,t-1] < T
-
+                id_total[i,t] = id_total[i, t-1]
                 T_total[i,t] = T_total[i,t-1] + 1
                 B_total[i,t] = S
                 i_b = round(get_index(B_total[i,t], b_grid))
@@ -274,7 +282,7 @@ function Simulate(pars, res)
                     omega_d = round(get_index(E[Int(i_b_pre), T_total[i,t-1], max(H_total[i,t-1]-1, 1), 2], ω_grid))
                     θ_find_stay = θ[Int(omega_s), T_total[i,t], H_total[i,t-1]]
                     p_find_stay = (θ_find_stay^(-ξ) + 1)^(-1/ξ)
-                    θ_find_decr = θ[Int(omega_d), T_total[i,t], max(H_total[i,t-1]-1, 1), 2]
+                    θ_find_decr = θ[Int(omega_d), T_total[i,t], max(H_total[i,t-1]-1, 1)]
                     p_find_decr = (θ_find_decr^(-ξ) + 1)^(-1/ξ)
                     
                     p_grid = [p_L * p_find_decr, p_L * (1-p_find_decr), (1-p_L) * p_find_stay, (1-p_L) * (1-p_find_stay)]
@@ -327,11 +335,11 @@ function Simulate(pars, res)
         end
     end
 
-    return B_total[:, (total-burnin):total], T_total[:, (total-burnin):total], U_total[:, (total-burnin):total], H_total[:, (total-burnin):total], W_total[:, (total-burnin):total], C_total[:, (total-burnin):total]
+    return B_total[:, (total-burnin+1):total], T_total[:, (total-burnin+1):total], U_total[:, (total-burnin+1):total], H_total[:, (total-burnin+1):total], W_total[:, (total-burnin+1):total], C_total[:, (total-burnin+1):total], id_total[:, (total-burnin+1):total]
 end
 
 function Run_simul(pars, res, sim)
-    sim.B_sim, sim.T_sim, sim.U_sim, sim.H_sim, sim.W_sim, sim.C_sim = Simulate(pars, res)
+    sim.B_sim, sim.T_sim, sim.U_sim, sim.H_sim, sim.W_sim, sim.C_sim, sim.id_sim = Simulate(pars, res)
 end
 
 ## Run all
@@ -341,5 +349,3 @@ VFI(pars, res)
 
 sim = Init_sim(pars)
 Run_simul(pars, res, sim)
-
-## Analysis
