@@ -4,7 +4,7 @@
 # Prepared by Yeonggyu Yun, Stefano Lord, and Fernando de Lima Lopes #
 ######################################################################
 
-using Parameters, Statistics, Plots, CSV, Tables, Random
+using Parameters, Statistics, Plots, CSV, Tables, Random, Distributions
 
 ##### 1. Housekeeping
 
@@ -91,7 +91,7 @@ function get_index(val::Float64, grid::Array{Float64,1})
 end
 
 ## 2. Bellman function iteration for a birth cohort
-## Super slow, so needs to improve on the algorithm...
+## Speed is not too bad.
 
 function Bellman(pars, res)
     @unpack T, N_b, N_h, N_ω, β, δ, z, σ, r, ξ, κ, τ, ω_grid, h_grid, b_grid, p_L, p_H = pars
@@ -241,7 +241,7 @@ function Simulate(pars, res)
         w_init = ifelse(u_init == 1, 0, rand(1:N_ω))
 
         B_total[i,1] = b_grid[b_init]
-        W_total[i,1] = ifelse(u_init == 1, z, ω_grid[w_init] * h_grid[h_init] * (1- τ))
+        W_total[i,1] = ifelse(u_init == 1, z, ω_grid[max(1,w_init)] * h_grid[max(1,h_init)] * (1- τ))
         U_total[i,1] = u_init
         C_total[i,1] = C[b_init, T_total[i,1], h_init, ifelse(u_init == 1, 1, 1+w_init)]
         H_total[i,1] = h_init
@@ -318,7 +318,7 @@ function Simulate(pars, res)
                     
                     U_total[i,t] = ifelse(p_case ∈ [1,2], 1, 0)
                     H_total[i,t] = ifelse(p_case ∈ [1,3], min(H_total[i,t-1]+1, N_h), H_total[i,t-1])
-                    W_total[i,t] = ifelse(U_total[i,t] == 1, z, (1-τ) * ω_grid[Int(omega)] * h_grid[H_total[i,t]])
+                    W_total[i,t] = ifelse(U_total[i,t] == 1, z, (1-τ) * ω_grid[max(1,Int(omega))] * h_grid[H_total[i,t]])
                     C_total[i,t] = C[Int(i_b), T_total[i,t], H_total[i,t], ifelse(U_total[i,t] == 1, 1, 1+Int(omega))]
                     S = (W_total[i,t] + B_total[i,t] - C_total[i,t]) * (1+r)
                 end
@@ -339,7 +339,7 @@ end
 pars, res = Initialize()
 VFI(pars, res)
 
-sim = Init_sim(pars, res)
+sim = Init_sim(pars)
 Run_simul(pars, res, sim)
 
 ## Analysis
