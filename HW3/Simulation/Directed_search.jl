@@ -137,12 +137,12 @@ function Bellman(pars, res)
                         
                     for (i_pf, pf) in enumerate(b_grid)
                         FB_s = (θ[:, t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ) .* W[i_pf, t+1, i_h, :] .+ (1 .- (θ[:, t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, i_h]
-                        FB_s[isnan.(FB_s)] = (1 .- (θ[isnan.(FB_s), t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, i_h]
+                        FB_s[isnan.(FB_s)] .= U[i_pf, t+1, i_h]
 
                         FB_stay, w1 = findmax(FB_s)
                            
                         FB_d = (θ[:, t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ) .* W[i_pf, t+1, max(i_h-1, 1), :] .+ (1 .- (θ[:, t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, max(i_h-1, 1)]
-                        FB_d[isnan.(FB_d)] = (1 .- (θ[isnan.(FB_d), t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, max(i_h-1, 1)]
+                        FB_d[isnan.(FB_d)] .= U[i_pf, t+1, max(i_h-1, 1)]
 
                         FB_decr, w2 = findmax(FB_d)
                            
@@ -243,7 +243,7 @@ function Simulate(pars, res)
             id_total[i,1] = id_total[i-1, total] + 1
         end
         T_total[i,1] = init_ages[i]
-        h_init = ifelse(init_ages[i] == 1, 1, rand(1:N_h))
+        h_init = rand(1:N_h)
         u_init = ifelse(init_ages[i] == 1, 1, rand(1:2)-1)
         b_init = ifelse(init_ages[i] == 1, 1, rand(1:N_b))
         w_init = ifelse(u_init == 1, 0, rand(1:N_ω))
@@ -257,20 +257,20 @@ function Simulate(pars, res)
         omega = w_init
 
         for t in 2:total
-            prob = rand(Uniform(0,1))
-
             if T_total[i,t-1] == T
                 id_total[i,t] = id_total[i,t-1] + 1
                 T_total[i,t] = 1
                 B_total[i,t] = 0
                 U_total[i,t] = 1
                 W_total[i,t] = z
-                H_total[i,t] = 1
+                H_total[i,t] = rand(1:N_h)
                 C_total[i,t] = C[1,1,1,1]
                 S = (W_total[i,t] + B_total[i,t] - C_total[i,t]) * (1+r)
                 omega = 0
 
             elseif T_total[i,t-1] < T
+                prob = rand(Uniform(0,1))
+
                 id_total[i,t] = id_total[i, t-1]
                 T_total[i,t] = T_total[i,t-1] + 1
                 B_total[i,t] = S
@@ -279,7 +279,7 @@ function Simulate(pars, res)
                 if U_total[i,t-1] == 1
                     i_b_pre = round(get_index(B_total[i,t-1], b_grid))
                     omega_s = round(get_index(E[Int(i_b_pre), T_total[i,t-1], H_total[i,t-1], 1], ω_grid))
-                    omega_d = round(get_index(E[Int(i_b_pre), T_total[i,t-1], max(H_total[i,t-1]-1, 1), 2], ω_grid))
+                    omega_d = round(get_index(E[Int(i_b_pre), T_total[i,t-1], H_total[i,t-1], 2], ω_grid))
                     θ_find_stay = θ[Int(omega_s), T_total[i,t], H_total[i,t-1]]
                     p_find_stay = (θ_find_stay^(-ξ) + 1)^(-1/ξ)
                     θ_find_decr = θ[Int(omega_d), T_total[i,t], max(H_total[i,t-1]-1, 1)]
