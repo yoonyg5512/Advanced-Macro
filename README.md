@@ -6,4 +6,4 @@ Participants: Yeonggyu Yun, Stefano Lord-Medrano, and Fernando Lopes
 
 1. Blundell, Pistaferri, and Preston (2008, AER) and Kaplan and Violante (2010, AEJ:Macro)
 2. Life-cycle model with workers' random search following Jarosch (2023, ECMA) and Davis and von Wachter (2011, BPEA)
-3. Directed search model with human capital evolution folowing Menzio, Telyukova, and Yisschers (2012, NBER WP) and Moen (1997, JPE)
+3. Directed search model with human capital evolution folowing Menzio, Telyukova, and Yisschers (2012, NBER WP), Moen (1997, JPE) and Braxton, Herkenhoff and Phillips (2020, WP)
