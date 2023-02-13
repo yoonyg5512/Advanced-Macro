@@ -108,8 +108,13 @@ function Bellman(pars, res)
         println(t)
         if t == T
             B[:, t, :, :] .= 0
-            for (i_h, h) in enumerate(h_grid)
-                for (i_ω, ω) in enumerate(ω_grid)
+            for (i_b, b) in enumerate(b_grid)
+                for (i_h, h) in enumerate(h_grid)
+
+                    C[i_b, t, i_h, 1] = z + b
+                    U[i_b, t, i_h] = (C[i_b, t, i_h, 1]^(1-σ) - 1) / (1-σ)
+
+                    for (i_ω, ω) in enumerate(ω_grid)
                 
                     J[i_ω, t, i_h] = (1 - ω) * h
 
@@ -119,55 +124,52 @@ function Bellman(pars, res)
                         θ[i_ω, t, i_h] = 0
                     end
                     
-                    for (i_b, b) in enumerate(b_grid)
-                        C[i_b, t, i_h, 1] = z + b
-                        U[i_b, t, i_h] = (C[i_b, t, i_h, 1]^(1-σ) - 1) / (1-σ)
-
-                        C[i_b, t, i_h, 1+i_ω] = (1 - τ) * ω * h + b
-                        W[i_b, t, i_h, i_ω] = (C[i_b, t, i_h, 1+i_ω]^(1-σ) - 1) / (1-σ)
+                    C[i_b, t, i_h, 1+i_ω] = (1 - τ) * ω * h + b
+                    W[i_b, t, i_h, i_ω] = (C[i_b, t, i_h, 1+i_ω]^(1-σ) - 1) / (1-σ)
                     end
                 end
             end   
         else 
-            for (i_ω, ω) in enumerate(ω_grid)
+            for (i_b, b) in enumerate(b_grid)
                 for (i_h, h) in enumerate(h_grid)
-                    J[i_ω, t, i_h] = (1 - ω) * h + β * (p_H * (1 - δ) * J[i_ω, t+1, min(i_h + 1, N_h)] + (1-p_H) * (1 - δ) * J[i_ω, t+1, i_h])
+                    U_cand = zeros(N_b)
+                    E_cand = zeros(N_b, 2)
+                        
+                    for (i_pf, pf) in enumerate(b_grid)
+                        FB_s = (θ[:, t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ) .* W[i_pf, t+1, i_h, :] .+ (1 .- (θ[:, t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, i_h]
+                        FB_s[isnan.(FB_s)] = (1 .- (θ[isnan.(FB_s), t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, i_h]
 
-                    if κ / J[i_ω, t, i_h] < 1
-                        θ[i_ω, t, i_h] = ((κ / J[i_ω, t, i_h])^(-ξ) - 1)^(1/ξ)
-                    elseif κ / J[i_ω, t, i_h] >= 1
-                        θ[i_ω, t, i_h] = 0
+                        FB_stay, w1 = findmax(FB_s)
+                           
+                        FB_d = (θ[:, t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ) .* W[i_pf, t+1, max(i_h-1, 1), :] .+ (1 .- (θ[:, t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, max(i_h-1, 1)]
+                        FB_d[isnan.(FB_d)] = (1 .- (θ[isnan.(FB_d), t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, max(i_h-1, 1)]
+
+                        FB_decr, w2 = findmax(FB_d)
+                           
+                        FB = FB_stay * (1-p_L) + FB_decr * p_L
+
+                        U_cand[i_pf] = ((z + b - pf / (1 + r))^(1-σ) - 1) / (1-σ) + β * FB
+                        E_cand[i_pf,:] = [w1, w2]
                     end
-                    
-                    for (i_b, b) in enumerate(b_grid)
+                    pol = findmax(U_cand)
 
-                        U_cand = zeros(N_b)
-                        E_cand = zeros(N_b, 2)
-                        for (i_pf, pf) in enumerate(b_grid)
-                           FB_s = (θ[:, t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ) .* W[i_pf, t+1, i_h, :] .+ (1 .- (θ[:, t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, i_h]
-                           FB_s[isnan.(FB_s)] = (1 .- (θ[isnan.(FB_s), t+1, i_h].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, i_h]
+                    U[i_b, t, i_h] = pol[1]
+                    E[i_b, t, i_h, 1] = ω_grid[Int(E_cand[pol[2],1])]
+                    E[i_b, t, i_h, 2] = ω_grid[Int(E_cand[pol[2],2])]
 
-                           FB_stay, w1 = findmax(FB_s)
-                           
-                           FB_d = (θ[:, t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ) .* W[i_pf, t+1, max(i_h-1, 1), :] .+ (1 .- (θ[:, t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, max(i_h-1, 1)]
-                           FB_d[isnan.(FB_d)] = (1 .- (θ[isnan.(FB_d), t+1, max(i_h-1, 1)].^(-ξ) .+ 1).^(- 1 / ξ)) .* U[i_pf, t+1, max(i_h-1, 1)]
+                    B[i_b, t, i_h, 1] = b_grid[pol[2]]
+                    C[i_b, t, i_h, 1] = b_grid[i_b] + z - B[i_b, t, i_h, 1] / (1 + r)
 
-                           FB_decr, w2 = findmax(FB_d)
-                           
-                           FB = FB_stay * (1-p_L) + FB_decr * p_L
+                    for (i_ω, ω) in enumerate(ω_grid)
 
-                           U_cand[i_pf] = ((z + b - pf / (1 + r))^(1-σ) - 1) / (1-σ) + β * FB
-                           E_cand[i_pf,:] = [w1, w2]
+                        J[i_ω, t, i_h] = (1 - ω) * h + β * (p_H * (1 - δ) * J[i_ω, t+1, min(i_h + 1, N_h)] + (1-p_H) * (1 - δ) * J[i_ω, t+1, i_h])
+
+                        if κ / J[i_ω, t, i_h] < 1
+                            θ[i_ω, t, i_h] = ((κ / J[i_ω, t, i_h])^(-ξ) - 1)^(1/ξ)
+                        elseif κ / J[i_ω, t, i_h] >= 1
+                            θ[i_ω, t, i_h] = 0
                         end
-                        pol = findmax(U_cand)
-
-                        U[i_b, t, i_h] = pol[1]
-                        E[i_b, t, i_h, 1] = ω_grid[Int(E_cand[pol[2],1])]
-                        E[i_b, t, i_h, 2] = ω_grid[Int(E_cand[pol[2],2])]
-
-                        B[i_b, t, i_h, 1] = b_grid[pol[2]]
-                        C[i_b, t, i_h, 1] = b_grid[i_b] + z - B[i_b, t, i_h, 1] / (1 + r)
-
+                        
                         W_cand = zeros(N_b)
                         
                         for (i_pf, pf) in enumerate(b_grid)
@@ -180,7 +182,7 @@ function Bellman(pars, res)
                         pol_e = findmax(W_cand)
                         W[i_b, t, i_h, i_ω] = pol_e[1]
                         B[i_b, t, i_h, 1 + i_ω] = b_grid[pol_e[2]]
-                        C[i_b, t, i_h, 1+i_ω] = (1 - τ) * ω * h + b - B[i_b, t, i_h, 1 + i_ω]
+                        C[i_b, t, i_h, 1+i_ω] = (1 - τ) * ω * h + b - B[i_b, t, i_h, 1 + i_ω] / (1+r)
                     end
                 end
             end       
