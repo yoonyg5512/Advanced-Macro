@@ -4,7 +4,7 @@
 # Prepared by Yeonggyu Yun, Stefano Lord, and Fernando de Lima Lopes #
 ######################################################################
 
-using Parameters, Statistics, Plots, CSV, Tables, Random, Distributions, DataFrames, Interpolations, Optim
+using Parameters, Statistics, Plots, CSV, Tables, Random, Distributions, DataFrames, Interpolations, Optim, JuMP, Ipopt
 
 ##### 1. Housekeeping
 
@@ -95,8 +95,8 @@ function Bellman(pars, res)
     ## Discretize the space of z following Tauchen
     
     N_z = 20
-    zN = μ_z + 3*σ_z
-    z1 = μ_z - 3*σ_z
+    zN = 3*σ_z
+    z1 = -3*σ_z
 
     Π_z = zeros(N_z)
     zs = range(start = z1, stop = zN, length = N_z)
@@ -110,6 +110,7 @@ function Bellman(pars, res)
             Π_z[j] = cdf(Normal(0, 1), (z_j+d/2)/σ_z) - cdf(Normal(0, 1), (z_j-d/2)/σ_z)
         end
     end
+    zs = zs .+ μ_z
 
     v_cand = zeros(N_k, T, N_h);
     s_cand = zeros(N_k, T, N_h);
@@ -128,58 +129,54 @@ function Bellman(pars, res)
     v_cand[:,T,:] = v_last;
     k_cand[:,T,:] .= 0.0; 
     s_cand[:,T,:] .= 0.0;
+    v_cand[1,T,1] = 1e-18;
     
     for t in collect((T-1):-1:1)
         v_interp = interpolate(v_cand[:,t+1,:], BSpline(Linear()));
-            for (i_k, k) in enumerate(k_grid)
 
-                for (i_h, h) in enumerate(h_grid)
-                        println([t, i_k, i_h])
-                        function v_tomorrow(i_kp, i_sp)
-                            v_t = 0.0;
-                            H = h + (h * s_interp(i_sp))^α
-                            
-                            for (n_z, z)  in enumerate(zs) 
-                                h_next = exp(z) * H
-                                i_h_next = get_index(h_next, h_grid)
+        function v_tomorrow(i_kp, i_sp, h)
+            v_t = 0.0;
+            H = h + (h * s_interp(i_sp))^α
+            
+            for (n_z, z)  in enumerate(zs) 
+                h_next = exp(z) * H
+                i_h_next = get_index(h_next, h_grid)
 
-                                v_t += Π_z[n_z] * ifelse(isnan(v_interp(i_kp, i_h_next)), -Inf,v_interp(i_kp, i_h_next))
-                            end
-
-                            return v_t
-                        end
-
-                        v_today(i_kp, i_sp) = (((1+r)*k + R^(t-1) * h * (1-s_interp(i_sp)) - k_interp(i_kp))^(1-σ) - 1) / (1-σ) + β * v_tomorrow(i_kp, i_sp)
-
-                        obj(x) = - v_today(x[1], x[2])
-                        lower = [1.0, 1.0]
-                        upper = [Float64(get_index((1+r)*k + R^(t-1) * h, k_grid)), Float64(N_k)]
-                        
-                        if lower[1] == upper[1]
-                            obj_t(x) = - v_today(lower[1], x)
-                            opt = optimize(obj_t, lower[2], upper[2])
-
-                            k_tomorrow = k_interp(lower[1])
-                            s_today = s_interp(opt.minimizer[1])
-                            v_now = -opt.minimum
-
-                            k_cand[i_k, t, i_h] = k_tomorrow
-                            s_cand[i_k, t, i_h] = s_today
-                            v_cand[i_k, t, i_h] = v_now
-                        elseif lower[1] < upper[1]
-                            opt = optimize(obj, lower, upper, [(lower[1] + upper[1])/2, 10],Fminbox(NelderMead()))
-
-                            k_tomorrow = k_interp(opt.minimizer[1])
-                            s_today = s_interp(opt.minimizer[2])
-                            v_now = -opt.minimum
-                            
-                            k_cand[i_k, t, i_h] = k_tomorrow
-                            s_cand[i_k, t, i_h] = s_today
-                            v_cand[i_k, t, i_h] = v_now
-                        end
-                end
+                v_t += Π_z[n_z] * v_interp(i_kp, i_h_next)
             end
+
+            return v_t
+        end
+    
+        function v_today(i_sp, h, k)
+            budget = (1+r)*k + R^(t-1) * h * (1-s_interp(i_sp))
+            v_given_s(i_kp) = ((budget - k_interp(i_kp))^(1-σ) - 1) / (1 - σ) + β * v_tomorrow(i_kp, i_sp, h)
+            lower_k = 1.0 
+            upper_k = get_index(budget, k_grid)
+            obj_k(i_kp) = - v_given_s(i_kp)
+            opt_k = optimize(obj_k, lower_k, upper_k)
+
+            return opt_k.minimizer[1], -opt_k.minimum
+        end
+
+        for (i_k, k) in enumerate(k_grid)
+            for (i_h, h) in enumerate(h_grid)
+                obj_s(i_sp) = - v_today(i_sp, h, k)[2]
+                lower_s = 1.0
+                upper_s = Float64(N_k)
+
+                opt_s = optimize(obj_s, lower_s, upper_s)
+                s_today = s_interp(opt_s.minimizer[1])
+                k_tomorrow = k_interp(v_today(opt_s.minimizer[1], h, k)[1])
+                v_now  = - opt_s.minimum
+
+                k_cand[i_k, t, i_h] = k_tomorrow
+                s_cand[i_k, t, i_h] = s_today
+                v_cand[i_k, t, i_h] = ifelse(isinf(v_now), 1e-18, v_now)
+            end
+        end
     end
+
     return k_cand, s_cand, v_cand, zs, Π_z
 end
 
@@ -192,13 +189,15 @@ end
 mutable struct Sims
     E::Array{Float64, 2} # Earnings of each individual at each year
     A::Array{Int64, 2} # Ages of each individual at each year
+    id::Array{Int64, 2} # Individual id
 end
 
 function Init_sim(pars)
     E::Array{Float64, 2} = zeros(pars.N_i, pars.T_sim) # 30 years of panel
     A::Array{Int64, 2} = zeros(pars.N_i, pars.T_sim)
+    id::Array{Int64, 2} = zeros(pars.N_i, pars.T_sim)
 
-    sims = Sims(E, A)
+    sims = Sims(E, A, id)
     return sims
 end
 
@@ -208,13 +207,16 @@ function Simulate(pars, res)
 
     E_sim = zeros(N_i, T_sim+burnin)
     A_sim = zeros(N_i, T_sim+burnin)
+    id_sim = zeros(N_i, T_sim+burnin)
 
     A_start = rand(1:T, N_i)
     A_sim[:,1] = A_start
     
     h_now = rand(Normal(μ_h, σ_h), N_i)
     h_now[h_now .< 0] .= 0.0
-    h_now = get_index.(h_now, h_grid)
+    for i in 1:N_i
+        h_now[i] = get_index(h_now[i], h_grid)
+    end
     k_start = rand(1:N_k, N_i)
     kp = zeros(N_i)
     sp = zeros(N_i) 
@@ -224,17 +226,23 @@ function Simulate(pars, res)
     S_interp = interpolate(S, BSpline(Linear()))
 
     for i in 1:N_i
-        E_sim[i,1] = R^(A_sim[i,1] - 1) * h_interp(h_now[i]) * S_interp(k_start, A_sim[i,1], h_now[i])
-        kp[i] = get_index(K_interp(k_start, A_sim[i,1], h_now[i]), k_grid)
-        sp[i] = get_index(S_interp(k_start, A_sim[i,1], h_now[i]), s_grid)
+        E_sim[i,1] = R^(A_sim[i,1] - 1) * h_interp(h_now[i]) * S_interp(k_start[i], A_sim[i,1], h_now[i])
+        kp[i] = get_index(K_interp(k_start[i], A_sim[i,1], h_now[i]), k_grid)
+        sp[i] = get_index(S_interp(k_start[i], A_sim[i,1], h_now[i]), s_grid)
     end
 
+    id_sim[1,1] = 1
     for i in 1:N_i
-        for j in 2:T_sim
+        if i > 1
+            id_sim[i,1] = id_sim[i-1, (T_sim+burnin)] + 1
+        end
+        for j in 2:(T_sim + burnin)
             if A_sim[i,j-1] == T
+                
+                id_sim[i,j] = id_sim[i,j-1] + 1
                 A_sim[i,j] = 1
 
-                h_init = maximum(rand(Normal(μ_h, σ_h)), 0.0)
+                h_init = maximum([rand(Normal(μ_h, σ_h)), 0.0])
                 h_now[i] = get_index(h_init, h_grid)
                 E_sim[i,j] = h_interp(h_now[i]) * (1 - S_interp(1, 1, h_now[i]))
 
@@ -242,6 +250,8 @@ function Simulate(pars, res)
                 sp[i] = get_index(S_interp(1, 1, h_now[i]), s_grid)
 
             elseif A_sim[i,j-1] < T
+                id_sim[i,j] = id_sim[i,j-1]
+
                 draw_z = rand(Uniform(0,1))
                 z_now = zs[Int(ceil(get_index(draw_z, cumsum(Π_z))))]
                 h_now[i] = get_index(exp(z_now) * (h_interp(h_now[i]) + (h_interp(h_now[i]) * sp[i])^α), h_grid)
@@ -255,14 +265,29 @@ function Simulate(pars, res)
         end
     end
 
-    return E_sim[:, (burnin+1):(T_sim+burnin)], A_sim[:, (burnin+1):(T_sim+burnin)]
+    return E_sim[:, (burnin+1):(T_sim+burnin)], A_sim[:, (burnin+1):(T_sim+burnin)], id_sim[:, (burnin+1):(T_sim+burnin)]
 end
 
-function Simulate(pars, res, sims)
-    sims.E, sims.A = Simulate(pars, res)
+function Simulate_data(pars, res, sims)
+    sims.E, sims.A, sims.id = Simulate(pars, res)
 end
 
 ## 4. Write into panel data
 
 pars, res = Initialize()
 Solve_Model(pars, res)
+
+sims = Init_sim(pars)
+Simulate_data(pars, res, sims)
+
+years = repeat(1:pars.T_sim, pars.N_i)
+panel = zeros(pars.T_sim*pars.N_i, 4)
+
+panel[:,1] = vec(sims.id') # ID
+panel[:,2] = years # Year
+panel[:,3] = vec(sims.A') # Age
+panel[:,4] = vec(sims.E') # Earnings
+
+panel = DataFrame(panel, :auto)
+rename!(panel, Symbol.(["ID", "Year", "Age", "Earnings"]))
+CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 4/HW/Simulated panel.csv", panel, writeheader = true)
