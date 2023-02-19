@@ -25,7 +25,7 @@ Random.seed!(1234)
 
     # Grids for human capital h and saving choice b and piece-rate ω
 
-    N_h::Int64 = 100
+    N_h::Int64 = 20
     N_k::Int64 = 20
     N_s::Int64 = 40
     h_grid::Array{Float64, 1} = range(start = 0.0, stop = 10.0, length = N_h)
@@ -130,13 +130,11 @@ function Bellman(pars, res)
     s_cand[:,T,:] .= 0.0;
     
     for t in collect((T-1):-1:1)
-        println(t)
         v_interp = interpolate(v_cand[:,t+1,:], BSpline(Linear()));
             for (i_k, k) in enumerate(k_grid)
 
-            println(i_k)
                 for (i_h, h) in enumerate(h_grid)
-                        println(i_h)
+                        println([t, i_k, i_h])
                         function v_tomorrow(i_kp, i_sp)
                             v_t = 0.0;
                             H = h + (h * s_interp(i_sp))^α
@@ -145,7 +143,7 @@ function Bellman(pars, res)
                                 h_next = exp(z) * H
                                 i_h_next = get_index(h_next, h_grid)
 
-                                v_t += Π_z[n_z] * v_interp(i_kp, i_h_next)
+                                v_t += Π_z[n_z] * ifelse(isnan(v_interp(i_kp, i_h_next)), -Inf,v_interp(i_kp, i_h_next))
                             end
 
                             return v_t
@@ -168,8 +166,8 @@ function Bellman(pars, res)
                             k_cand[i_k, t, i_h] = k_tomorrow
                             s_cand[i_k, t, i_h] = s_today
                             v_cand[i_k, t, i_h] = v_now
-                        else
-                            opt = optimize(obj, lower, upper, [(lower[1] +upper[1]) / 2, (lower[2] + upper[2])/ 2], NelderMead())
+                        elseif lower[1] < upper[1]
+                            opt = optimize(obj, lower, upper, [(lower[1] + upper[1])/2, 10],Fminbox(NelderMead()))
 
                             k_tomorrow = k_interp(opt.minimizer[1])
                             s_today = s_interp(opt.minimizer[2])
@@ -179,7 +177,6 @@ function Bellman(pars, res)
                             s_cand[i_k, t, i_h] = s_today
                             v_cand[i_k, t, i_h] = v_now
                         end
-                    end
                 end
             end
     end
