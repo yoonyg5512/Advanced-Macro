@@ -280,7 +280,6 @@ function Simulate(pars, res)
                 if j < (T_sim + burnin)
                     KP_sim[i,j+1] = get_index(K_interp(KP_sim[i,j], A_sim[i,j], h_now), k_grid)
                 end
-                sp[i] = get_index(S_interp(kp[i], A_sim[i,j], h_now[i]), s_grid)
 
                 H_sim[i,j] = h_interp(h_now)
                 S_sim[i,j] = S_interp(KP_sim[i,j], A_sim[i,j], h_now)
