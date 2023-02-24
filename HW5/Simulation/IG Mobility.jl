@@ -76,7 +76,7 @@ function Initialize()
     B::Array{Float64, 3} = zeros(pars.N_b, 4, pars.N_h) # Asset choice in periods 4, 10, 11, 12
     Bc::Array{Float64, 4} = zeros(pars.N_b, 5, pars.N_h, pars.N_hc) # Asset choice in peridos 5, 6, 7, 8, 9
     I::Array{Float64, 4} = zeros(pars.N_b, 4, pars.N_h, pars.N_hc) # Investment choice in periods 5, 6, 7, 8
-    T::Array{Float64, 3} = zeros(pars.N_b, pars.N_h, pars.N_hc) # Transfer to kids in period 9
+    Tr::Array{Float64, 3} = zeros(pars.N_b, pars.N_h, pars.N_hc) # Transfer to kids in period 9
 
     # Discretized grid of z
 
@@ -95,7 +95,7 @@ function get_index(val::Float64, grid::Array{Float64,1})
     if val <= grid[1]
         index = 1
     elseif val >= grid[n]
-        index = n
+        index = nß
     else
         index_upper = findfirst(x->x>val, grid)
         index_lower = index_upper - 1
@@ -135,8 +135,8 @@ end
 ## 2. Bellman equation
 
 function Bellman(pars, res)
-    @unpack β, r, σ, T, θ, κ, ω_c, h_grid, hc_grid, b_grid, τ_grid, i_grid = pars
-
+    @unpack β, r, σ, T, θ, κ, ω_c, h_grid, hc_grid, b_grid, τ_grid, i_grid, N_hc = pars
+    @unpack V, Vc = res
     ## Discretize the space of z following Tauchen
     
     res.ηs, res.Π_η = trans_Tauchen(pars)
@@ -144,8 +144,8 @@ function Bellman(pars, res)
 
     ## Initialize 
 
-    V= zeros(pars.N_b, 4, pars.N_h) # Value function for periods 4, 10, 11, 12
-    Vc = zeros(pars.N_b, 5, pars.N_h, pars.N_hc) # Value function for periods 5, 6, 7, 8, 9
+    V_cand = zeros(pars.N_b, 4, pars.N_h) # Value function for periods 4, 10, 11, 12
+    Vc_cand = zeros(pars.N_b, 5, pars.N_h, pars.N_hc) # Value function for periods 5, 6, 7, 8, 9
     B = zeros(pars.N_b, 4, pars.N_h) # Asset choice in periods 4, 10, 11, 12
     Bc = zeros(pars.N_b, 5, pars.N_h, pars.N_hc) # Asset choice in peridos 5, 6, 7, 8, 9
     I = zeros(pars.N_b, 4, pars.N_h, pars.N_hc) # Investment choice in periods 5, 6, 7, 8
@@ -154,14 +154,16 @@ function Bellman(pars, res)
     b_interp = interpolate(b_grid, BSpline(Linear()))
     τ_interp = interpolate(τ_grid, BSpline(Linear()))
     i_interp = interpolate(i_grid, BSpline(Linear()))
-    
+    V_interp = interpolate(V, Bspline(Linear()))
+    Vc_interp = interpolate(Vc, Bspline(Linear()))
+
     ## Periods 10, 11, 12
 
     for (i_b, b) in enumerate(b_grid)
         for (i_h, h) in enumerate(h_grid)
             B[i_b, 4, i_h] = 0
-            c = exp(κ[13] + h) + (1+r) * B
-            V[i_b, 4, i_h] = (c^(1-σ) - 1) / (1 - σ)
+            c = exp(κ[9] + h) + (1+r) * B
+            V_cand[i_b, 4, i_h] = (c^(1-σ) - 1) / (1 - σ)
         end
     end
 
@@ -169,31 +171,173 @@ function Bellman(pars, res)
         for (i_b, b) in enumerate(b_grid)
             for (i_h, h) in enumerate(h_grid)
 
-            function
-            
+                budget = exp(κ[t+5] + h) + (1+r) * b
+                function v_tomorrow(i_bp)
+                    v = 0.0
+                    for (i_hp, hp) in enumerate(h_grid)
+                        v += Π_η[i_h, i_hp] * V[i_bp, t+1, i_hp] 
+                    end
+                    return v
+                end
+
+                v_today(i_bp) = ((budget - b_interp(i_bp))^(1-σ) -1) / (1-σ) + β * v_tomorrow(i_bp)
+                obj(i_bp) = - v_today(i_bp) 
+                lower = 1.0 
+                upper = get_index(budget, b_grid)
+                opt = optimize(obj, lower, upper)
+
+                B[i_b, t, i_h] = opt.minimizer[1]
+                V_cand[i_b, t, i_h] = - opt.minimum
             end
         end
     end
 
-    ## Periods 5, 6, 7, 8, 9
+    ## Period 9
+
+    for (i_b, b) in enumerate(b_grid)
+        for (i_h, h) in enumerate(h_grid)
+            for (i_hc, hc) in enumerate(hc_grid)
+                
+                function v_tomorrow(i_bp)
+                    v = 0
+                    for (i_hp, hp) in enumerate(h_grid)
+                        v += Π_η[i_h, i_hp] * V[i_bp, 2, i_hp]
+                    end
+                    return v
+                end
+
+                function v_now(i_τ)
+                    budget = exp(κ[6] + h) + (1+r) * b - τ_interp(i_τ)
+                    v_t(i_bp) = ((budget - b_interp(i_bp))^(1-σ) - 1)/(1-σ) + θ * V_interp(i_τ, 1, i_hc) + β * v_tomorrow(i_bp)
+                    obj_9(i_bp) = - v_t(i_bp)
+                    lower = 1.0
+                    upper = get_index(budget, b_grid)
+                    opt = optimize(obj_9, lower, upper)
+
+                    return opt.minimizer[1], - opt.minimum
+                end
+
+                obj_τ(i_τ) = - v_now(i_τ)
+                lower = 1.0
+                upper = get_index(exp(κ[10] + h) + (1+r) * b, τ_grid)
+                opt_τ = optimize(obj_τ, lower, upper)
+
+                Tr[i_b, i_h, i_hc] = τ_interp(opt_τ.minimizer[1])
+                Bc[i_b, 5, i_h, i_hc] = b_interp(v_now(opt_τ.minimizer[1])[1])
+                Vc_cand[i_b, 5, i_h, i_hc] = - opt_τ.minimum
+            end
+        end
+    end
+
+    ## Periods 5, 6, 7, 8
+
+    for t in range(4:-1:1)
+        for (i_b, b) in enumerate(b_grid)
+            for (i_h, h) in enumerate(h_grid)
+                for (i_hc, hc) in enumerate(hc_grid)
+                    function v_tomorrow(i_bp, i_i)
+                        v = 0
+                        i_hcp = get_index((1-ω_c) * hc + ω_c * i_interp(i_i), hc_grid)
+
+                        for (i_hp, hp) in enumerate(h_grid)
+                            v += Π_η[i_h, i_hp] * Vc_interp(i_bp, t+1, i_hp, i_hcp)
+                        end
+                        return v
+                    end
+    
+                    function v_now(i_i)
+                        budget = exp(κ[t+1] + h) + (1+r) * b - i_interp(i_i)
+                        v_t(i_bp) = ((budget - b_interp(i_bp))^(1-σ) - 1)/(1-σ) + β * v_tomorrow(i_bp, i_i)
+                        obj_c(i_bp) = - v_t(i_bp)
+                        lower = 1.0
+                        upper = get_index(budget, b_grid)
+                        opt = optimize(obj_c, lower, upper)
+    
+                        return opt.minimizer[1], - opt.minimum
+                    end
+    
+                    obj_i(i_i) = - v_now(i_i)
+                    lower = 1.0
+                    upper = get_index(exp(κ[10] + h) + (1+r) * b, i_grid)
+                    opt_i = optimize(obj_i, lower, upper)
+    
+                    I[i_b, t, i_h, i_hc] = i_interp(opt_i.minimizer[1])
+                    Bc[i_b, t, i_h, i_hc] = b_interp(v_now(opt_i.minimizer[1])[1])
+                    Vc_cand[i_b, t, i_h, i_hc] = - opt_i.minimum
+                end
+            end
+        end
+    end
 
     ## Period 4
+    
+    for (i_b, b) in enumerate(b_grid)
+        for (i_h, h) in enumerate(h_grid)
+                budget = exp(κ[1] + h) + (1+r) * b
 
+                function v_tomorrow(i_bp)
+                    v = 0.0
+                    for (i_hp, hp) in enumerate(h_grid)
+                        for i_hpc in 1:Int(N_hc / 2)
+                            v += Π_η[i_h, i_hp] * 2 / N_hc * Vc[i_bp, 1, i_hp, i_hpc]
+                        end 
+                    end
+                    return v
+                end
 
+                v_today(i_bp) = ((budget - b_interp(i_bp))^(1-σ) -1) / (1-σ) + β * v_tomorrow(i_bp)
+                obj(i_bp) = - v_today(i_bp) 
+                lower = 1.0 
+                upper = get_index(budget, b_grid)
+                opt = optimize(obj, lower, upper)
+
+                B[i_b, 1, i_h] = opt.minimizer[1]
+                V_cand[i_b, 1, i_h] = - opt.minimum
+            end
+        end
+    end
+
+    return V_cand, Vc_cand, B, Bc, I, Tr
 end
 
 function Solve_Model(pars, res)
-    res.K, res.S, res.V, res.zs, res.Π_z = Bellman(pars, res)
+    tol = 1e-5
+    err = 100.0
+
+    while err > tol
+        V_cand, Vc_cand, B_cand, Bc_cand, I_cand, Tr_cand = Bellman(pars, res)
+        err = max(abs.(res.V - V_cand), abs.(res.Vc - Vc_cand), abs.(res.B - B_cand), abs.(res.Bc - Bc_cand), abs.(res.I - I_cand), abs.(res.Tr - Tr_cand))
+        res.V = V_cand
+        res.Vc = Vc_cand
+        res.B = B_cand
+        res.Bc = Bc_cand
+        res.I = I_cand
+        res.Tr = Tr_cand
+    end
 end
 
 ## 3. Simulation
 
 mutable struct Sims
-    E::Array{Float64, 2} # Earnings of each individual at each year
-    A::Array{Int64, 2} # Ages of each individual at each year
-    H::Array{Float64, 2}
-    S::Array{Float64, 2}
-    id::Array{Int64, 2} # Individual id
+    E::Array{Float64, 2} # Earnings of each individual in each period
+    A::Array{Int64, 2} # Ages of each individual in each period
+    H::Array{Float64, 2} # Human capital of each individual in each period
+end
+
+function Init_sims(pars)
+    E::Array{Float64, 2} = zeros(pars.N_i, T_sim)
+    A::Array{Int64, 2} = zeros(pars.N_i, T_sim)
+    H::Array{Float64, 2} = zeros(pars.N_i, T_sim)
+
+    sims = Sims(E, A, H)
+end
+
+function Simulate(pars, res)
+
+end
+
+function Simulate_data(pars, res, sims)
+    sims.E, sims.A, sims.H = Simulate(pars, res)
 end
 
 
