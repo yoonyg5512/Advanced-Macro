@@ -25,23 +25,23 @@ Random.seed!(1234)
 
     # Grids for parents human capital h and kids human capital hc
 
-    N_h::Int64 = 30
-    N_hc::Int64 = 30
+    N_h::Int64 = N_η
+    N_hc::Int64 = N_η
     h_grid::Array{Float64, 1} = range(start = 0.0, stop = 30.0, length = N_h)
     hc_grid::Array{Float64, 1} = range(start = 0.0, stop = 30.0, length = N_hc)
 
     # Grids for asset b, investment in kids i, transfer to kids τ
 
-    N_b::Int64 = 81
-    N_τ::Int64 = 40
-    N_i::Int64 = 40
+    N_b::Int64 = 11
+    N_τ::Int64 = 10
+    N_i::Int64 = 10
     b_grid::Array{Float64, 1} = range(start = -40.0, stop = 40.0, length = N_b)
     τ_grid::Array{Float64, 1} = range(start = 0.0, stop = 40.0, length = N_τ)
     i_grid::Array{Float64, 1} = range(start = 0.0, stop = 40.0, length = N_i)
 
     # Simulation
 
-    N_i::Int64 = 10000 # Number of individuals to simulate
+    N_ind::Int64 = 10000 # Number of individuals to simulate
     T_sim::Int64 = 30 # Number of periods to simulate
     burnin::Int64 = 45
 end
@@ -81,9 +81,9 @@ function Initialize()
     # Discretized grid of z
 
     ηs::Array{Float64, 1} = zeros(pars.N_η)
-    Π_η::Array{Float64, 1} = zeros(pars.N_η, pars.N_η)
+    Π_η::Array{Float64, 2} = zeros(pars.N_η, pars.N_η)
 
-    res = Results(V, S, K, zs, Π_z)
+    res = Results(V, Vc, B, Bc, I, Tr, ηs, Π_η)
     return pars, res
 end
 
@@ -95,7 +95,7 @@ function get_index(val::Float64, grid::Array{Float64,1})
     if val <= grid[1]
         index = 1
     elseif val >= grid[n]
-        index = nß
+        index = n
     else
         index_upper = findfirst(x->x>val, grid)
         index_lower = index_upper - 1
@@ -117,12 +117,12 @@ function trans_Tauchen(pars)
     Π_η = zeros(N_η, N_η)
 
     ηs = range(start = z1, stop = zN, length = N_η)
-    d1 = zs[2] - zs[1]
-    for (j, z_j) in enumerate(zs)
-        for (k, z_k) in enumerate(zs)
+    d1 = ηs[2] - ηs[1]
+    for (j, z_j) in enumerate(ηs)
+        for (k, z_k) in enumerate(ηs)
             if k == 1
                 Π_η[j,k] = cdf(Normal(0, 1), (z_k+d1/2-ρ_h*z_j)/σ_h)
-            elseif k == N_perp
+            elseif k == N_η
                 Π_η[j,k] = 1 - cdf(Normal(0,1), (z_k-d1/2-ρ_h*z_j)/σ_h)
             else
                 Π_η[j,k] = cdf(Normal(0, 1), (z_k+d1/2-ρ_h*z_j)/σ_h) - cdf(Normal(0, 1), (z_k-d1/2-ρ_h*z_j)/σ_h)
@@ -154,33 +154,34 @@ function Bellman(pars, res)
     b_interp = interpolate(b_grid, BSpline(Linear()))
     τ_interp = interpolate(τ_grid, BSpline(Linear()))
     i_interp = interpolate(i_grid, BSpline(Linear()))
-    V_interp = interpolate(V, Bspline(Linear()))
-    Vc_interp = interpolate(Vc, Bspline(Linear()))
+    V_interp = interpolate(V, BSpline(Linear()))
+    Vc_interp = interpolate(Vc, BSpline(Linear()))
 
     ## Periods 10, 11, 12
 
     for (i_b, b) in enumerate(b_grid)
         for (i_h, h) in enumerate(h_grid)
             B[i_b, 4, i_h] = 0
-            c = exp(κ[9] + h) + (1+r) * B
+            c = exp(κ[9] + h) + (1+r) * b
             V_cand[i_b, 4, i_h] = (c^(1-σ) - 1) / (1 - σ)
         end
     end
 
-    for t in range(3:-1:2)
+    function v_tomorrow(i_bp, i_h, t)
+        v = 0.0
+        for (i_hp, hp) in enumerate(h_grid)
+            v += Π_η[i_h, i_hp] * V_interp(i_bp, t+1, i_hp) 
+        end
+        return v
+    end
+
+    for t in collect(3:-1:2)
         for (i_b, b) in enumerate(b_grid)
             for (i_h, h) in enumerate(h_grid)
 
                 budget = exp(κ[t+5] + h) + (1+r) * b
-                function v_tomorrow(i_bp)
-                    v = 0.0
-                    for (i_hp, hp) in enumerate(h_grid)
-                        v += Π_η[i_h, i_hp] * V[i_bp, t+1, i_hp] 
-                    end
-                    return v
-                end
-
-                v_today(i_bp) = ((budget - b_interp(i_bp))^(1-σ) -1) / (1-σ) + β * v_tomorrow(i_bp)
+                
+                v_today(i_bp) = ((budget - b_interp(i_bp))^(1-σ) -1) / (1-σ) + β * v_tomorrow(i_bp, i_h, t)
                 obj(i_bp) = - v_today(i_bp) 
                 lower = 1.0 
                 upper = get_index(budget, b_grid)
@@ -194,75 +195,75 @@ function Bellman(pars, res)
 
     ## Period 9
 
+    function v_tomorrow(i_bp, i_h)
+        v = 0
+        for (i_hp, hp) in enumerate(h_grid)
+            v += Π_η[i_h, i_hp] * V_interp(i_bp, 2, i_hp)
+        end
+        return v
+    end
+
+    function v_now(i_τ, h, b, i_h, i_hc)
+        budget = exp(κ[6] + h) + (1+r) * b - τ_interp(i_τ)
+        i_τ_in_b = get_index(τ_interp(i_τ), b_grid)
+        v_t(i_bp) = ((budget - b_interp(i_bp))^(1-σ) - 1)/(1-σ) + θ * V_interp(i_τ_in_b, 1, i_hc) + β * v_tomorrow(i_bp, i_h)
+        obj_9(i_bp) = - v_t(i_bp)
+        lower = 1.0
+        upper = get_index(budget, b_grid)
+        opt = optimize(obj_9, lower, upper)
+
+        return opt.minimizer[1], - opt.minimum
+    end
+
     for (i_b, b) in enumerate(b_grid)
         for (i_h, h) in enumerate(h_grid)
             for (i_hc, hc) in enumerate(hc_grid)
-                
-                function v_tomorrow(i_bp)
-                    v = 0
-                    for (i_hp, hp) in enumerate(h_grid)
-                        v += Π_η[i_h, i_hp] * V[i_bp, 2, i_hp]
-                    end
-                    return v
-                end
-
-                function v_now(i_τ)
-                    budget = exp(κ[6] + h) + (1+r) * b - τ_interp(i_τ)
-                    v_t(i_bp) = ((budget - b_interp(i_bp))^(1-σ) - 1)/(1-σ) + θ * V_interp(i_τ, 1, i_hc) + β * v_tomorrow(i_bp)
-                    obj_9(i_bp) = - v_t(i_bp)
-                    lower = 1.0
-                    upper = get_index(budget, b_grid)
-                    opt = optimize(obj_9, lower, upper)
-
-                    return opt.minimizer[1], - opt.minimum
-                end
-
-                obj_τ(i_τ) = - v_now(i_τ)
+                println([i_b, i_h, i_hc])
+                obj_τ(i_τ) = - v_now(i_τ, h, b, i_h, i_hc)[2]
                 lower = 1.0
-                upper = get_index(exp(κ[10] + h) + (1+r) * b, τ_grid)
+                upper = get_index(exp(κ[6] + h) + (1+r) * b, τ_grid)
                 opt_τ = optimize(obj_τ, lower, upper)
 
                 Tr[i_b, i_h, i_hc] = τ_interp(opt_τ.minimizer[1])
-                Bc[i_b, 5, i_h, i_hc] = b_interp(v_now(opt_τ.minimizer[1])[1])
+                Bc[i_b, 5, i_h, i_hc] = b_interp(v_now(opt_τ.minimizer[1], h, b, i_h, i_hc)[1])
                 Vc_cand[i_b, 5, i_h, i_hc] = - opt_τ.minimum
             end
         end
     end
 
     ## Periods 5, 6, 7, 8
+    function v_tomorrow(i_bp, i_i, hc, i_h, t)
+        v = 0
+        i_hcp = get_index((1-ω_c) * hc + ω_c * i_interp(i_i), hc_grid)
 
-    for t in range(4:-1:1)
+        for (i_hp, hp) in enumerate(h_grid)
+            v += Π_η[i_h, i_hp] * Vc_interp(i_bp, t+1, i_hp, i_hcp)
+        end
+        return v
+    end
+
+    function v_now(i_i, h, b, hc, i_h, t)
+        budget = exp(κ[t+1] + h) + (1+r) * b - i_interp(i_i)
+        v_t(i_bp) = ((budget - b_interp(i_bp))^(1-σ) - 1)/(1-σ) + β * v_tomorrow(i_bp, i_i, hc, i_h, t)
+        obj_c(i_bp) = - v_t(i_bp)
+        lower = 1.0
+        upper = get_index(budget, b_grid)
+        opt = optimize(obj_c, lower, upper)
+
+        return opt.minimizer[1], - opt.minimum
+    end
+
+    for t in collect(4:-1:1)
         for (i_b, b) in enumerate(b_grid)
             for (i_h, h) in enumerate(h_grid)
                 for (i_hc, hc) in enumerate(hc_grid)
-                    function v_tomorrow(i_bp, i_i)
-                        v = 0
-                        i_hcp = get_index((1-ω_c) * hc + ω_c * i_interp(i_i), hc_grid)
-
-                        for (i_hp, hp) in enumerate(h_grid)
-                            v += Π_η[i_h, i_hp] * Vc_interp(i_bp, t+1, i_hp, i_hcp)
-                        end
-                        return v
-                    end
-    
-                    function v_now(i_i)
-                        budget = exp(κ[t+1] + h) + (1+r) * b - i_interp(i_i)
-                        v_t(i_bp) = ((budget - b_interp(i_bp))^(1-σ) - 1)/(1-σ) + β * v_tomorrow(i_bp, i_i)
-                        obj_c(i_bp) = - v_t(i_bp)
-                        lower = 1.0
-                        upper = get_index(budget, b_grid)
-                        opt = optimize(obj_c, lower, upper)
-    
-                        return opt.minimizer[1], - opt.minimum
-                    end
-    
-                    obj_i(i_i) = - v_now(i_i)
+                    obj_i(i_i) = - v_now(i_i, h, b, hc, i_h, t)[2]
                     lower = 1.0
                     upper = get_index(exp(κ[10] + h) + (1+r) * b, i_grid)
                     opt_i = optimize(obj_i, lower, upper)
     
                     I[i_b, t, i_h, i_hc] = i_interp(opt_i.minimizer[1])
-                    Bc[i_b, t, i_h, i_hc] = b_interp(v_now(opt_i.minimizer[1])[1])
+                    Bc[i_b, t, i_h, i_hc] = b_interp(v_now(opt_i.minimizer[1], h, b, hc, i_h, t)[1])
                     Vc_cand[i_b, t, i_h, i_hc] = - opt_i.minimum
                 end
             end
@@ -270,22 +271,21 @@ function Bellman(pars, res)
     end
 
     ## Period 4
+    function v_tomorrow(i_bp, i_h)
+        v = 0.0
+        for (i_hp, hp) in enumerate(h_grid)
+            for i_hpc in 1:Int(N_hc / 2)
+                v += Π_η[i_h, i_hp] * 2 / N_hc * Vc_interp(i_bp, 1, i_hp, i_hpc)
+            end 
+        end
+        return v
+    end
     
     for (i_b, b) in enumerate(b_grid)
         for (i_h, h) in enumerate(h_grid)
                 budget = exp(κ[1] + h) + (1+r) * b
-
-                function v_tomorrow(i_bp)
-                    v = 0.0
-                    for (i_hp, hp) in enumerate(h_grid)
-                        for i_hpc in 1:Int(N_hc / 2)
-                            v += Π_η[i_h, i_hp] * 2 / N_hc * Vc[i_bp, 1, i_hp, i_hpc]
-                        end 
-                    end
-                    return v
-                end
-
-                v_today(i_bp) = ((budget - b_interp(i_bp))^(1-σ) -1) / (1-σ) + β * v_tomorrow(i_bp)
+          
+                v_today(i_bp) = ((budget - b_interp(i_bp))^(1-σ) -1) / (1-σ) + β * v_tomorrow(i_bp, i_h)
                 obj(i_bp) = - v_today(i_bp) 
                 lower = 1.0 
                 upper = get_index(budget, b_grid)
