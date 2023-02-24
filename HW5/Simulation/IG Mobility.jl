@@ -17,7 +17,7 @@ Random.seed!(1234)
     σ::Float64 = 2.0 # Risk aversion
     θ::Float64 = 0.32 # Altruism
 
-    κ::Array{Float64, 1} = [1,1,1,1,1,1,1,1,1] # Age specific income for periods 4-12
+    κ::Array{Float64, 1} = [9.2298, 9.6825, 10.106, 10.476, 10.743, 10.954, 11.108, 11.23, 11.426] # Age specific income for periods 4-12
     ω_c::Float64 = 0.5
     ρ_h::Float64 = 0.7 # Can choose different values!
     σ_h::Float64 = 0.97^6
@@ -259,7 +259,7 @@ function Bellman(pars, res)
                 for (i_hc, hc) in enumerate(hc_grid)
                     obj_i(i_i) = - v_now(i_i, h, b, hc, i_h, t)[2]
                     lower = 1.0
-                    upper = get_index(exp(κ[10] + h) + (1+r) * b, i_grid)
+                    upper = get_index(exp(κ[t+1] + h) + (1+r) * b, i_grid)
                     opt_i = optimize(obj_i, lower, upper)
     
                     I[i_b, t, i_h, i_hc] = i_interp(opt_i.minimizer[1])
