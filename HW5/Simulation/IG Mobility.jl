@@ -305,7 +305,7 @@ function Solve_Model(pars, res)
 
     while err > tol
         V_cand, Vc_cand, B_cand, Bc_cand, I_cand, Tr_cand = Bellman(pars, res)
-        err = max(abs.(res.V - V_cand), abs.(res.Vc - Vc_cand), abs.(res.B - B_cand), abs.(res.Bc - Bc_cand), abs.(res.I - I_cand), abs.(res.Tr - Tr_cand))
+        err = max(maximum(abs.(res.V .- V_cand)), maximum(abs.(res.Vc .- Vc_cand)), maximum(abs.(res.B .- B_cand)), maximum(abs.(res.Bc .- Bc_cand)), maximum(abs.(res.I .- I_cand)), maximum(abs.(res.Tr .- Tr_cand)))
         res.V = V_cand
         res.Vc = Vc_cand
         res.B = B_cand
@@ -318,17 +318,19 @@ end
 ## 3. Simulation
 
 mutable struct Sims
+    id::Array{Float64, 2}
     E::Array{Float64, 2} # Earnings of each individual in each period
     A::Array{Int64, 2} # Ages of each individual in each period
     H::Array{Float64, 2} # Human capital of each individual in each period
 end
 
 function Init_sims(pars)
+    id::Array{Float64, 2} = zeros(pars.N_i, T_sim)
     E::Array{Float64, 2} = zeros(pars.N_i, T_sim)
     A::Array{Int64, 2} = zeros(pars.N_i, T_sim)
     H::Array{Float64, 2} = zeros(pars.N_i, T_sim)
 
-    sims = Sims(E, A, H)
+    sims = Sims(id, E, A, H)
 end
 
 function Simulate(pars, res)
@@ -348,19 +350,18 @@ Solve_Model(pars, res)
 sims = Init_sim(pars)
 Simulate_data(pars, res, sims)
 
-years = repeat(1:pars.T_sim, pars.N_i)
-panel = zeros(pars.T_sim*pars.N_i, 6)
+years = repeat(1:pars.T_sim, pars.N_ind)
+panel = zeros(pars.T_sim*pars.N_ind, 5)
 
 panel[:,1] = vec(sims.id') # ID
 panel[:,2] = years # Year
 panel[:,3] = vec(sims.A') # Age
 panel[:,4] = vec(sims.E') # Earnings
-panel[:,5] = vec(sims.S') # Earnings
-panel[:,6] = vec(sims.H') # Earnings
+panel[:,5] = vec(sims.H') # Human capital
 
 
 panel = DataFrame(panel, :auto)
-rename!(panel, Symbol.(["ID", "Year", "Age", "Earnings", "S", "H"]))
+rename!(panel, Symbol.(["ID", "Year", "Age", "Earnings", "Human capital"]))
 CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 4/HW/Simulated panel.csv", panel, writeheader = true)
 
 mean_by_age = zeros(pars.T)
