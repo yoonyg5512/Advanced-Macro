@@ -27,15 +27,15 @@ Random.seed!(1234)
 
     N_h::Int64 = N_η
     N_hc::Int64 = N_η
-    h_grid::Array{Float64, 1} = range(start = 0.0, stop = 30.0, length = N_h)
-    hc_grid::Array{Float64, 1} = range(start = 0.0, stop = 30.0, length = N_hc)
+    h_grid::Array{Float64, 1} = range(start = 0.0, stop = 15.0, length = N_h)
+    hc_grid::Array{Float64, 1} = range(start = 0.0, stop = 15.0, length = N_hc)
 
     # Grids for asset b, investment in kids i, transfer to kids τ
 
     N_b::Int64 = 11
     N_τ::Int64 = 10
     N_i::Int64 = 10
-    b_grid::Array{Float64, 1} = range(start = -40.0, stop = 40.0, length = N_b)
+    b_grid::Array{Float64, 1} = range(start = -10000000.0, stop = 10000000.0, length = N_b)
     τ_grid::Array{Float64, 1} = range(start = 0.0, stop = 40.0, length = N_τ)
     i_grid::Array{Float64, 1} = range(start = 0.0, stop = 40.0, length = N_i)
 
@@ -218,7 +218,6 @@ function Bellman(pars, res)
     for (i_b, b) in enumerate(b_grid)
         for (i_h, h) in enumerate(h_grid)
             for (i_hc, hc) in enumerate(hc_grid)
-                println([i_b, i_h, i_hc])
                 obj_τ(i_τ) = - v_now(i_τ, h, b, i_h, i_hc)[2]
                 lower = 1.0
                 upper = get_index(exp(κ[6] + h) + (1+r) * b, τ_grid)
@@ -283,17 +282,17 @@ function Bellman(pars, res)
     
     for (i_b, b) in enumerate(b_grid)
         for (i_h, h) in enumerate(h_grid)
-                budget = exp(κ[1] + h) + (1+r) * b
+            budget = exp(κ[1] + h) + (1+r) * b
           
-                v_today(i_bp) = ((budget - b_interp(i_bp))^(1-σ) -1) / (1-σ) + β * v_tomorrow(i_bp, i_h)
-                obj(i_bp) = - v_today(i_bp) 
-                lower = 1.0 
-                upper = get_index(budget, b_grid)
-                opt = optimize(obj, lower, upper)
+            v_today(i_bp) = ((budget - b_interp(i_bp))^(1-σ) -1) / (1-σ) + β * v_tomorrow(i_bp, i_h)
+            obj(i_bp) = - v_today(i_bp) 
+            lower = 1.0 
+            upper = get_index(budget, b_grid)
+            opt = optimize(obj, lower, upper)
 
-                B[i_b, 1, i_h] = opt.minimizer[1]
-                V_cand[i_b, 1, i_h] = - opt.minimum
-            end
+            B[i_b, 1, i_h] = opt.minimizer[1]
+            V_cand[i_b, 1, i_h] = - opt.minimum
+            
         end
     end
 
