@@ -4,7 +4,7 @@
 # by Yeonggyu Yun, Stefano Lord-Medrano, and Fernando de Lima Lopes ##
 ######################################################################
 
-using Parameters, Statistics, Plots, CSV, Tables, Random, Distributions, DataFrames, Interpolations, Optim, JuMP, Ipopt
+using Parameters, Statistics, Plots, CSV, Tables, Random, Distributions, DataFrames, Interpolations, Optim
 
 ##### 1. Housekeeping
 
@@ -17,27 +17,27 @@ Random.seed!(1234)
     σ::Float64 = 2.0 # Risk aversion
     θ::Float64 = 0.32 # Altruism
 
-    κ::Array{Float64, 1} = [9.2298, 9.6825, 10.106, 10.476, 10.743, 10.954, 11.108, 11.23, 11.426] # Age specific income for periods 4-12
+    κ::Array{Float64, 1} = [9.2298, 9.6825, 10.106, 10.476, 10.743, 10.954, 11.108, 11.23, 11.426] .- 9.2298 # Age specific income for periods 4-12
     ω_c::Float64 = 0.5
-    ρ_h::Float64 = 0.7 # Can choose different values!
-    σ_h::Float64 = 0.97^6
+    ρ_h::Float64 = 0.97^6 # Can choose different values!
+    σ_h::Float64 = 0.3
     N_η::Int64 = 20
 
     # Grids for parents human capital h and kids human capital hc
 
     N_h::Int64 = N_η
     N_hc::Int64 = N_η
-    h_grid::Array{Float64, 1} = range(start = 0.0, stop = 15.0, length = N_h)
-    hc_grid::Array{Float64, 1} = range(start = 0.0, stop = 15.0, length = N_hc)
+    h_grid::Array{Float64, 1} = range(start = 0.0, stop = 1.0, length = N_h)
+    hc_grid::Array{Float64, 1} = range(start = 0.0, stop = 1.0, length = N_hc)
 
     # Grids for asset b, investment in kids i, transfer to kids τ
 
     N_b::Int64 = 11
     N_τ::Int64 = 10
     N_i::Int64 = 10
-    b_grid::Array{Float64, 1} = range(start = -10000000.0, stop = 10000000.0, length = N_b)
-    τ_grid::Array{Float64, 1} = range(start = 0.0, stop = 40.0, length = N_τ)
-    i_grid::Array{Float64, 1} = range(start = 0.0, stop = 40.0, length = N_i)
+    b_grid::Array{Float64, 1} = range(start = -exp(2.5), stop = exp(2.5), length = N_b)
+    τ_grid::Array{Float64, 1} = range(start = 0.0, stop =  exp(2.5), length = N_τ)
+    i_grid::Array{Float64, 1} = range(start = 0.0, stop = exp(2.5), length = N_i)
 
     # Simulation
 
@@ -223,8 +223,8 @@ function Bellman(pars, res)
                 upper = get_index(exp(κ[6] + h) + (1+r) * b, τ_grid)
                 opt_τ = optimize(obj_τ, lower, upper)
 
-                Tr[i_b, i_h, i_hc] = τ_interp(opt_τ.minimizer[1])
-                Bc[i_b, 5, i_h, i_hc] = b_interp(v_now(opt_τ.minimizer[1], h, b, i_h, i_hc)[1])
+                Tr[i_b, i_h, i_hc] = opt_τ.minimizer[1]
+                Bc[i_b, 5, i_h, i_hc] = v_now(opt_τ.minimizer[1], h, b, i_h, i_hc)[1]
                 Vc_cand[i_b, 5, i_h, i_hc] = - opt_τ.minimum
             end
         end
@@ -233,7 +233,7 @@ function Bellman(pars, res)
     ## Periods 5, 6, 7, 8
     function v_tomorrow(i_bp, i_i, hc, i_h, t)
         v = 0
-        i_hcp = get_index((1-ω_c) * hc + ω_c * i_interp(i_i), hc_grid)
+        i_hcp = get_index((1-ω_c) * hc + ω_c * log(i_interp(i_i) + 1.0), hc_grid)
 
         for (i_hp, hp) in enumerate(h_grid)
             v += Π_η[i_h, i_hp] * Vc_interp(i_bp, t+1, i_hp, i_hcp)
@@ -261,8 +261,8 @@ function Bellman(pars, res)
                     upper = get_index(exp(κ[t+1] + h) + (1+r) * b, i_grid)
                     opt_i = optimize(obj_i, lower, upper)
     
-                    I[i_b, t, i_h, i_hc] = i_interp(opt_i.minimizer[1])
-                    Bc[i_b, t, i_h, i_hc] = b_interp(v_now(opt_i.minimizer[1], h, b, hc, i_h, t)[1])
+                    I[i_b, t, i_h, i_hc] = opt_i.minimizer[1]
+                    Bc[i_b, t, i_h, i_hc] = v_now(opt_i.minimizer[1], h, b, hc, i_h, t)[1]
                     Vc_cand[i_b, t, i_h, i_hc] = - opt_i.minimum
                 end
             end
@@ -292,7 +292,6 @@ function Bellman(pars, res)
 
             B[i_b, 1, i_h] = opt.minimizer[1]
             V_cand[i_b, 1, i_h] = - opt.minimum
-            
         end
     end
 
@@ -300,18 +299,23 @@ function Bellman(pars, res)
 end
 
 function Solve_Model(pars, res)
-    tol = 1e-5
+    tol = 1e-4
     err = 100.0
+    n = 1
 
     while err > tol
         V_cand, Vc_cand, B_cand, Bc_cand, I_cand, Tr_cand = Bellman(pars, res)
-        err = max(maximum(abs.(res.V .- V_cand)), maximum(abs.(res.Vc .- Vc_cand)), maximum(abs.(res.B .- B_cand)), maximum(abs.(res.Bc .- Bc_cand)), maximum(abs.(res.I .- I_cand)), maximum(abs.(res.Tr .- Tr_cand)))
+        err = findmax([maximum(abs.(res.V .- V_cand)), maximum(abs.(res.Vc .- Vc_cand))])[1]
+        err_ind = findmax([maximum(abs.(res.V .- V_cand)), maximum(abs.(res.Vc .- Vc_cand))])[2]
         res.V = V_cand
         res.Vc = Vc_cand
         res.B = B_cand
         res.Bc = Bc_cand
         res.I = I_cand
         res.Tr = Tr_cand
+        println("Iteration ", n, ", Error: ", err, " on matrix ", err_ind)
+        
+        n += 1
     end
 end
 
@@ -334,13 +338,17 @@ function Init_sims(pars)
 end
 
 function Simulate(pars, res)
+    @unpack
+    @unpack ηs, Π_η, B, Bc, I, Tr = res
+
+
+    for
 
 end
 
 function Simulate_data(pars, res, sims)
     sims.E, sims.A, sims.H = Simulate(pars, res)
 end
-
 
 ## 4. Write into panel data
 
@@ -363,11 +371,3 @@ panel[:,5] = vec(sims.H') # Human capital
 panel = DataFrame(panel, :auto)
 rename!(panel, Symbol.(["ID", "Year", "Age", "Earnings", "Human capital"]))
 CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 4/HW/Simulated panel.csv", panel, writeheader = true)
-
-mean_by_age = zeros(pars.T)
-
-for i in 1:pars.T
-    mean_by_age[i] = mean(sims.E[sims.A .== i])
-end
-
-plot(mean_by_age)
