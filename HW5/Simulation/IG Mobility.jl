@@ -162,8 +162,8 @@ function Bellman(pars, res)
     for (i_b, b) in enumerate(b_grid)
         for (i_h, h) in enumerate(h_grid)
             B[i_b, 4, i_h] = 0
-            c = max(exp(κ[9] + h) + (1+r) * b, 0.0)
-            V_cand[i_b, 4, i_h] = (c^(1-σ) - 1) / (1 - σ)
+            c = exp(κ[9] + h) + (1+r) * b
+            V_cand[i_b, 4, i_h] = ifelse(c > 0, (c^(1-σ) - 1) / (1 - σ), -1e+8)
         end
     end
 
@@ -181,7 +181,7 @@ function Bellman(pars, res)
 
                 budget = exp(κ[t+5] + h) + (1+r) * b
                 
-                v_today(i_bp) = ifelse(budget - b_interp(i_bp) > 0, ((budget - b_interp(i_bp))^(1-σ) -1) / (1-σ) + β * v_tomorrow(i_bp, i_h, t), -1e+18)
+                v_today(i_bp) = ifelse(budget - b_interp(i_bp) > 0, ((budget - b_interp(i_bp))^(1-σ) -1) / (1-σ) + β * v_tomorrow(i_bp, i_h, t), -1e+8)
                 obj(i_bp) = - v_today(i_bp) 
                 lower = 1.0 
                 upper = get_index(budget, b_grid)
@@ -206,7 +206,7 @@ function Bellman(pars, res)
     function v_now(i_τ, h, b, i_h, i_hc)
         budget = exp(κ[6] + h) + (1+r) * b - τ_interp(i_τ)
         i_τ_in_b = get_index(τ_interp(i_τ), b_grid)
-        v_t(i_bp) = ifelse(budget - b_interp(i_bp) > 0, ((budget - b_interp(i_bp))^(1-σ) - 1)/(1-σ) + θ * V_interp(i_τ_in_b, 1, i_hc) + β * v_tomorrow(i_bp, i_h), -1e+18)
+        v_t(i_bp) = ifelse(budget - b_interp(i_bp) > 0, ((budget - b_interp(i_bp))^(1-σ) - 1)/(1-σ) + θ * V_interp(i_τ_in_b, 1, i_hc) + β * v_tomorrow(i_bp, i_h), -1e+8)
         obj_9(i_bp) = - v_t(i_bp)
         lower = 1.0
         upper = get_index(budget, b_grid)
@@ -243,7 +243,7 @@ function Bellman(pars, res)
 
     function v_now(i_i, h, b, hc, i_h, t)
         budget = exp(κ[t+1] + h) + (1+r) * b - i_interp(i_i)
-        v_t(i_bp) = ifelse(budget - b_interp(i_bp) > 0, ((budget - b_interp(i_bp))^(1-σ) - 1)/(1-σ) + β * v_tomorrow(i_bp, i_i, hc, i_h, t), -1e+18)
+        v_t(i_bp) = ifelse(budget - b_interp(i_bp) > 0, ((budget - b_interp(i_bp))^(1-σ) - 1)/(1-σ) + β * v_tomorrow(i_bp, i_i, hc, i_h, t), -1e+8)
         obj_c(i_bp) = - v_t(i_bp)
         lower = 1.0
         upper = get_index(budget, b_grid)
@@ -284,7 +284,7 @@ function Bellman(pars, res)
         for (i_h, h) in enumerate(h_grid)
             budget = exp(κ[1] + h) + (1+r) * b
           
-            v_today(i_bp) = ifelse(budget - b_interp(i_bp) > 0, ((budget - b_interp(i_bp))^(1-σ) -1) / (1-σ) + β * v_tomorrow(i_bp, i_h), -1e+18)
+            v_today(i_bp) = ifelse(budget - b_interp(i_bp) > 0, ((budget - b_interp(i_bp))^(1-σ) -1) / (1-σ) + β * v_tomorrow(i_bp, i_h), -1e+8)
             obj(i_bp) = - v_today(i_bp) 
             lower = 1.0 
             upper = get_index(budget, b_grid)
@@ -338,16 +338,17 @@ function Init_sims(pars)
 end
 
 function Simulate(pars, res)
-    @unpack N_ind, T_sim, burnin = pars
+    @unpack N_ind, T_sim, burnin, T = pars
     @unpack ηs, Π_η, B, Bc, I, Tr = res
 
-    age_init
+    age_init = rand(1:T, N_ind)
+    T_total = T_sim + burnin
 
-    id_sim
-    E_sim
-    A_sim
-    H_sim
-    for 
+    id_sim = zeros(N_ind, T_total)
+    E_sim = zeros(N_ind, T_total)
+    A_sim = zeros(N_ind, T_total)
+    H_sim = zeros(N_ind, T_total)
+    for i in 
 
 end
 
