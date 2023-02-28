@@ -11,7 +11,7 @@ using Parameters, Statistics, Plots, CSV, Tables, Random, Distributions, DataFra
 Random.seed!(1234)
 
 @with_kw struct Params
-    T::Int64 = 13 # 13 periods in life
+    T::Int64 = 9 # 9 periods in life
     r::Float64 = (1.04)^6 - 1 # Interst rate
     β::Float64 = (1 / 1.04)^6 # Time discount
     σ::Float64 = 2.0 # Risk aversion
@@ -42,8 +42,7 @@ Random.seed!(1234)
     # Simulation
 
     N_ind::Int64 = 10000 # Number of individuals to simulate
-    T_sim::Int64 = 30 # Number of periods to simulate
-    burnin::Int64 = 45
+    T_sim::Int64 = 9 # Number of periods to simulate
 end
 
 mutable struct Results
@@ -322,38 +321,108 @@ end
 ## 3. Simulation
 
 mutable struct Sims
-    id::Array{Float64, 2}
     E::Array{Float64, 2} # Earnings of each individual in each period
-    A::Array{Int64, 2} # Ages of each individual in each period
     H::Array{Float64, 2} # Human capital of each individual in each period
+    I::Array{Float64, 2}
+    Tr::Array{Float64}
+    Hc::Array{Float64, 2}
+    B::Array{Float64, 2}
 end
 
 function Init_sims(pars)
-    id::Array{Float64, 2} = zeros(pars.N_i, T_sim)
-    E::Array{Float64, 2} = zeros(pars.N_i, T_sim)
-    A::Array{Int64, 2} = zeros(pars.N_i, T_sim)
-    H::Array{Float64, 2} = zeros(pars.N_i, T_sim)
+    E::Array{Float64, 2} = zeros(pars.N_ind, T_sim)
+    H::Array{Float64, 2} = zeros(pars.N_ind, T_sim)
+    I::Array{Float64, 2} = zeros(pars.N_ind, 4)
+    Tr::Array{Float64} = zeros(pars.N_ind)
+    Hc::Array{Float64, 2} = zeros(pars.N_ind, 5)
+    B::Array{Float64, 2} = zeros(pars.N_ind, T_sim)
 
-    sims = Sims(id, E, A, H)
+    sims = Sims(id, E, H, I, Tr, Hc, B)
 end
 
 function Simulate(pars, res)
-    @unpack N_ind, T_sim, burnin, T = pars
+    @unpack N_ind, T_sim, T, h_grid, i_grid, τ_grid, b_grid, N_h, N_i, N_τ, N_b, κ, ω_c = pars
     @unpack ηs, Π_η, B, Bc, I, Tr = res
 
-    age_init = rand(1:T, N_ind)
-    T_total = T_sim + burnin
+    B_interp = interpolate(B, BSpline(Linear()))
+    Bc_interp = interpolate(Bc, BSpline(Linear()))
+    I_interp = interpolate(I, BSpline(Linear()))
+    Tr_interp = interpolate(Tr, BSpline(Linear()))
+    h_interp = interpolate(h_grid, BSpline(Linear()))
+    b_interp = interpolate(b_grid, BSpline(Linear()))
+        
+    E_sim = zeros(N_ind, T_sim)
+    H_sim = zeros(N_ind, T_sim)
+    I_sim = zeros(N_ind, 4)
+    Tr_sim = zeros(N_ind)
+    Hc_sim = zeros(N_ind, 5)
+    B_sim = zeros(N_ind, T_sim)
 
-    id_sim = zeros(N_ind, T_total)
-    E_sim = zeros(N_ind, T_total)
-    A_sim = zeros(N_ind, T_total)
-    H_sim = zeros(N_ind, T_total)
-    for i in 
+    for i in 1:N_ind
+        
+        # Period 4
 
+        h_init = rand(1:N_h)
+        H_sim[i,1] = h_interp(h_init)
+        E_sim[i,1] = exp(H_sim[i,1] + κ[1])
+        B_sim[i,1] = b_interp(rand(1:N_b))
+
+        # Periods 5, 6, 7, 8
+
+        for j in 2:5 
+            prob = rand(Uniform(0,1))
+            probs = cumsum(Π_η[Int(get_index(H_sim[i,j-1], h_grid)),:])
+            case = ceil(get_index(prob, probs))
+
+            H_sim[i,j] = h_interp(Int(case))
+            E_sim[i,j] = exp(H_sim[i,j] + κ[j])
+            if j == 2
+                B_sim[i,j] = B_interp(get_index(B_sim[i,j-1], b_grid), 1, get_index(H_sim[i,j-1], h_grid))
+                hc_init = rand(1:(N_h/2))
+                I_sim[i,j-1] = i_interp(get_index(B_sim[i,j], b_grid), j-1, case, hc_init)
+                Hc_sim[i,j-1] = h_interp(hc_init)
+            else
+                B_sim[i,j] = Bc_interp(get_index(B_sim[i,j-1], b_grid), j-2, get_index(H_sim[i,j-1], h_grid), get_index(Hc_sim[i,j-2], h_grid))
+                Hc_sim[i,j-1] = (1-ω_c) * Hc_sim[i,j-2] + ω_c * log(1+I_sim[i,j-2])
+                I_sim[i,j-1] = i_interp(get_index(B_sim[i,j], b_grid), j-1, case, get_index(Hc_sim[i,j-1], h_grid))
+            end
+        end
+
+        # Period 9
+
+        prob = rand(Uniform(0,1))
+        probs = cumsum(Π_η[Int(get_index(H_sim[i,5], h_grid)),:])
+        case = ceil(get_index(prob, probs))
+        
+        H_sim[i,6] = h_interp(Int(case))
+        E_sim[i,6] = exp(H_sim[i,6] + κ[6])
+        B_sim[i,6] = Bc_interp(get_index(B_sim[i,5], b_grid), 4, get_index(H_sim[i,5], h_grid), get_index(Hc_sim[i,4], h_grid))
+        Hc_sim[i,5] = (1-ω_c) * Hc_sim[i,4] + ω_c * log(1+I_sim[i,4])
+        Tr_sim[i] = Tr_interp(get_index(B_sim[i,6], b_grid), get_index(H_sim[i,6], h_grid), get_index(Hc_sim[i,5], h_grid))        
+
+        # Period 10, 11, 12
+        
+        for j in 7:9
+            prob = rand(Uniform(0,1))
+            probs = cumsum(Π_η[Int(get_index(H_sim[i,j-1], h_grid)),:])
+            case = ceil(get_index(prob, probs))
+            
+            H_sim[i,j] = h_interp(Int(case))
+            E_sim[i,j] = exp(H_sim[i,j] + κ[j])
+            if j == 7
+                B_sim[i,j] = Bc_interp(get_index(B_sim[i,j-1], b_grid), 5, get_index(H_sim[i,j-1], h_grid), get_index(Hc_sim[i,j-2], h_grid))
+            else
+                B_sim[i,j] = B_interp(get_index(B_sim[i,j-1], b_grid), j-6, get_index(H_sim[i,j-1], h_grid))
+            end
+
+        end
+    end
+
+    return E_sim, H_sim, I_sim, Tr_sim, Hc_sim, B_sim
 end
 
 function Simulate_data(pars, res, sims)
-    sims.E, sims.A, sims.H = Simulate(pars, res)
+    sims.E, sims.H, sims.I, sims.Tr, sims.Hc, sims.B = Simulate(pars, res)
 end
 
 ## 4. Write into panel data
