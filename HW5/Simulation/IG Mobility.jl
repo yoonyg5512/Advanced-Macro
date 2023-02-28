@@ -433,16 +433,3 @@ Solve_Model(pars, res)
 sims = Init_sim(pars)
 Simulate_data(pars, res, sims)
 
-years = repeat(1:pars.T_sim, pars.N_ind)
-panel = zeros(pars.T_sim*pars.N_ind, 5)
-
-panel[:,1] = vec(sims.id') # ID
-panel[:,2] = years # Year
-panel[:,3] = vec(sims.A') # Age
-panel[:,4] = vec(sims.E') # Earnings
-panel[:,5] = vec(sims.H') # Human capital
-
-
-panel = DataFrame(panel, :auto)
-rename!(panel, Symbol.(["ID", "Year", "Age", "Earnings", "Human capital"]))
-CSV.write("/Users/Yeonggyu/Desktop/윤영규/대학원 (UW-Madison)/Coursework/Spring 2023/Econ 810 - Advanced Macroeconomics/Week 4/HW/Simulated panel.csv", panel, writeheader = true)
