@@ -330,6 +330,7 @@ mutable struct Sims
 end
 
 function Init_sims(pars)
+    T_sim::Int64 = 9 # Number of periods to simulate
     E::Array{Float64, 2} = zeros(pars.N_ind, T_sim)
     H::Array{Float64, 2} = zeros(pars.N_ind, T_sim)
     I::Array{Float64, 2} = zeros(pars.N_ind, 4)
@@ -337,7 +338,7 @@ function Init_sims(pars)
     Hc::Array{Float64, 2} = zeros(pars.N_ind, 5)
     B::Array{Float64, 2} = zeros(pars.N_ind, T_sim)
 
-    sims = Sims(id, E, H, I, Tr, Hc, B)
+    sims = Sims(E, H, I, Tr, Hc, B)
 end
 
 function Simulate(pars, res)
@@ -379,12 +380,12 @@ function Simulate(pars, res)
             if j == 2
                 B_sim[i,j] = B_interp(get_index(B_sim[i,j-1], b_grid), 1, get_index(H_sim[i,j-1], h_grid))
                 hc_init = rand(1:(N_h/2))
-                I_sim[i,j-1] = i_interp(get_index(B_sim[i,j], b_grid), j-1, case, hc_init)
+                I_sim[i,j-1] = I_interp(get_index(B_sim[i,j], b_grid), j-1, case, hc_init)
                 Hc_sim[i,j-1] = h_interp(hc_init)
             else
                 B_sim[i,j] = Bc_interp(get_index(B_sim[i,j-1], b_grid), j-2, get_index(H_sim[i,j-1], h_grid), get_index(Hc_sim[i,j-2], h_grid))
                 Hc_sim[i,j-1] = (1-ω_c) * Hc_sim[i,j-2] + ω_c * log(1+I_sim[i,j-2])
-                I_sim[i,j-1] = i_interp(get_index(B_sim[i,j], b_grid), j-1, case, get_index(Hc_sim[i,j-1], h_grid))
+                I_sim[i,j-1] = I_interp(get_index(B_sim[i,j], b_grid), j-1, case, get_index(Hc_sim[i,j-1], h_grid))
             end
         end
 
@@ -424,6 +425,7 @@ end
 function Simulate_data(pars, res, sims)
     sims.E, sims.H, sims.I, sims.Tr, sims.Hc, sims.B = Simulate(pars, res)
 end
+
 
 ## 4. Write into panel data
 
