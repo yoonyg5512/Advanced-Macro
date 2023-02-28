@@ -435,3 +435,28 @@ Solve_Model(pars, res)
 sims = Init_sim(pars)
 Simulate_data(pars, res, sims)
 
+# Plots of policy functions
+plot(res.I[11,4,1,:], label = L"(b_{high},h=1)", xlabel = L"h^{c}", ylabel = L"i\left(\bar{b},\bar{h},h^{c}\right)", color = "blue")
+plot!(res.I[11,4,5,:], label = L"(b_{high},h=5)", xlabel = L"h^{c}", ylabel = L"i\left(\bar{b},\bar{h},h^{c}\right)", color = "red")
+plot!(res.I[11,4,10,:], label = L"(b_{high},h=10)", xlabel = L"h^{c}", ylabel = L"i\left(\bar{b},\bar{h},h^{c}\right)", color = "orange")
+plot!(res.I[11,4,15,:], label = L"(b_{high},h=15)", xlabel = L"h^{c}", ylabel = L"i\left(\bar{b},\bar{h},h^{c}\right)", color = "gray")
+
+plot(res.I[6,4,1,:], label = L"(b_{med},h=1)", xlabel = L"h^{c}", ylabel = L"i\left(\bar{b},\bar{h},h^{c}\right)", color = "blue")
+plot!(res.I[6,4,5,:], label = L"(b_{med},h=5)", xlabel = L"h^{c}", ylabel = L"i\left(\bar{b},\bar{h},h^{c}\right)", color = "red")
+plot!(res.I[6,4,10,:], label = L"(b_{med},h=10)", xlabel = L"h^{c}", ylabel = L"i\left(\bar{b},\bar{h},h^{c}\right)", color = "orange")
+plot!(res.I[6,4,15,:], label = L"(b_{med},h=15)", xlabel = L"h^{c}", ylabel = L"i\left(\bar{b},\bar{h},h^{c}\right)", color = "gray")
+
+sims = Init_sims(pars)
+Simulate_data(pars, res, sims)
+
+# Distribution of human capital when agents start working
+histogram(sims.Hc[:, 5], fillalpha=0.5, label = L"h^{c}", c = :blue)
+Plots.savefig("/Users/smlm/Desktop/Desktop - Stefano’s MacBook Pro/2nd Year PhD/2nd Semester/Econ 810/Braxton Part/Problem Set Solutions/PS5/Distribution_hc.pdf")
+#histogram(sims.H[:, 1], fillalpha=0.5, label = L"h", c = :red)
+
+# Compute variance of earnings by age
+var_earnings = [var(sims.E[:,1]), var(sims.E[:,2]), var(sims.E[:,3]), var(sims.E[:,4]), var(sims.E[:,5]), var(sims.E[:,6]), var(sims.E[:,7]), var(sims.E[:,8]), var(sims.E[:,9])]
+age = LinRange(1,9,9)
+plot(scatter(var_earnings, mode="lines", color = "red", label = "", xlabel = "Age", ylabel = "Variance of earnings"))
+Plots.savefig("/Users/smlm/Desktop/Desktop - Stefano’s MacBook Pro/2nd Year PhD/2nd Semester/Econ 810/Braxton Part/Problem Set Solutions/PS5/Variance_Earnings.pdf")
+
